@@ -1,5 +1,27 @@
 fastapi
-uvicorn
-langchain
-langgraph
-gitpython
+uvicorn[standard]
+bandit
+pip-licenses
+pydantic
+requests
+sentence-transformers
+faiss-cpu
+qdrant-client
+python-dotenv
+# Security scanning tools
+# Python: bandit (included above)
+# Java: SpotBugs (install separately)
+#   macOS: brew install spotbugs
+#   Linux: Download from https://github.com/spotbugs/spotbugs/releases
+#   Or use: wget https://github.com/spotbugs/spotbugs/releases/download/4.8.3/spotbugs-4.8.3.tgz
+# OWASP Dependency-Check: Dependency vulnerability scanning (Java/Maven)
+#   macOS: brew install dependency-check
+#   Linux: Download from https://owasp.org/www-project-dependency-check/
+#   Or use: wget https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.9/dependency-check-9.0.9-release.zip
+# LLM providers (install as needed)
+# For OpenAI (production):
+# openai
+# For Ollama (development - default, no package needed, just install Ollama locally)
+# For Hugging Face (optional):
+# transformers
+# torch
