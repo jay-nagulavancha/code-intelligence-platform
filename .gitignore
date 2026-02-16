@@ -29,6 +29,10 @@ Thumbs.db
 
 # Scan output files
 security_scan_*.json
+scan_report_*.json
+
+# Vector DB data
+.vector_db/
 
 # Temporary files
 *.tmp

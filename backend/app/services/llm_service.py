@@ -67,10 +67,19 @@ class LLMService:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
     def _check_ollama_available(self) -> bool:
-        """Check if Ollama is available and running."""
+        """Check if Ollama is reachable and the configured model exists."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=2)
-            return response.status_code == 200
+            response = requests.get(f"{self.base_url}/api/tags", timeout=3)
+            if response.status_code != 200:
+                return False
+            models = [m.get("name", "") for m in response.json().get("models", [])]
+            if self.model not in models:
+                # Try without tag suffix (e.g. "llama3.2" matches "llama3.2:3b")
+                base = self.model.split(":")[0]
+                if not any(base in m for m in models):
+                    print(f"Ollama model '{self.model}' not found. Available: {models}")
+                    return False
+            return True
         except Exception:
             return False
 
@@ -107,11 +116,13 @@ class LLMService:
             response = requests.post(
                 f"{self.base_url}/api/generate",
                 json=payload,
-                timeout=120
+                timeout=60
             )
             response.raise_for_status()
             result = response.json()
             return result.get("response", "").strip()
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"Ollama request timed out (60s). Model may be loading or unresponsive.")
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Ollama API request failed: {str(e)}")
 

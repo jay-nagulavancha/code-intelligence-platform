@@ -2,6 +2,7 @@
 OSS Agent - Multi-language open source dependency scanning.
 Supports Python (pip-licenses) and Java (OWASP Dependency-Check).
 Scans dependencies for licenses and known vulnerabilities.
+Automatically builds Java projects before scanning.
 """
 import subprocess
 import json
@@ -9,16 +10,19 @@ import os
 import xml.etree.ElementTree as ET
 from typing import List, Dict, Optional
 from app.utils.project_detector import ProjectDetector
+from app.utils.project_builder import ProjectBuilder
 
 
 class OSSAgent:
     """
     Multi-language OSS dependency scanner.
     Scans dependencies for licenses and known vulnerabilities.
+    Auto-builds Java projects when needed.
     """
 
     def __init__(self):
         self.detector = ProjectDetector()
+        self.builder = ProjectBuilder()
 
     def _detect_language(self, repo_path: str) -> str:
         """Detect primary language of the project."""
@@ -69,8 +73,25 @@ class OSSAgent:
         except Exception as e:
             raise RuntimeError(f"Python dependency scan failed: {str(e)}")
 
-    def _scan_java_maven(self, repo_path: str) -> List[Dict]:
-        """Scan Java Maven dependencies using OWASP Dependency-Check."""
+    def _scan_java_maven(self, repo_path: str, auto_build: bool = True) -> List[Dict]:
+        """
+        Scan Java Maven dependencies using OWASP Dependency-Check.
+        Automatically builds the project first so dependency JARs are resolved.
+        """
+        # Auto-build so that dependency JARs are downloaded into target/
+        if auto_build:
+            build_result = self.builder.build(repo_path)
+            if not build_result["success"]:
+                return [{
+                    "type": "oss",
+                    "language": "java",
+                    "tool": "dependency-check",
+                    "severity": "warning",
+                    "message": f"Auto-build failed — dependency scan may be incomplete: {build_result['message']}",
+                    "package": None,
+                    "version": None
+                }]
+
         try:
             # Check if dependency-check is available
             try:

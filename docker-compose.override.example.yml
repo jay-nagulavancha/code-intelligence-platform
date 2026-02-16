@@ -1,0 +1,47 @@
+# =============================================================================
+# Docker Compose Override Example
+# Copy this file to docker-compose.override.yml and customize
+# =============================================================================
+#
+# Usage: cp docker-compose.override.example.yml docker-compose.override.yml
+# Then edit docker-compose.override.yml with your settings.
+# Docker Compose automatically merges override files.
+# =============================================================================
+
+services:
+  backend:
+    environment:
+      # --- LLM Provider ---
+      # Ollama (default - local, open-source)
+      - LLM_PROVIDER=ollama
+      - OLLAMA_MODEL=llama3.2:3b
+
+      # OpenAI (uncomment for production)
+      # - LLM_PROVIDER=openai
+      # - OPENAI_API_KEY=sk-your-key-here
+      # - OPENAI_MODEL=gpt-4o-mini
+
+      # Hugging Face (uncomment for custom models)
+      # - LLM_PROVIDER=huggingface
+      # - HUGGINGFACE_API_KEY=hf_your-key-here
+      # - HF_MODEL=mistralai/Mistral-7B-Instruct-v0.2
+
+      # --- GitHub MCP ---
+      - GITHUB_TOKEN=ghp_your_token_here
+
+      # --- Vector DB ---
+      # Use "faiss" (default, in-memory) or "qdrant" (persistent, scalable)
+      - VECTOR_DB_TYPE=faiss
+
+      # --- LLM Tokens ---
+      - LLM_MAX_TOKENS=1000
+
+  # Enable GPU for Ollama (NVIDIA)
+  # ollama:
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]

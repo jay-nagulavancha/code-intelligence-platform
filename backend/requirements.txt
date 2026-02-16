@@ -1,27 +1,33 @@
-fastapi
-uvicorn[standard]
-bandit
-pip-licenses
-pydantic
-requests
-sentence-transformers
-faiss-cpu
-qdrant-client
-python-dotenv
-# Security scanning tools
-# Python: bandit (included above)
-# Java: SpotBugs (install separately)
-#   macOS: brew install spotbugs
-#   Linux: Download from https://github.com/spotbugs/spotbugs/releases
-#   Or use: wget https://github.com/spotbugs/spotbugs/releases/download/4.8.3/spotbugs-4.8.3.tgz
-# OWASP Dependency-Check: Dependency vulnerability scanning (Java/Maven)
-#   macOS: brew install dependency-check
-#   Linux: Download from https://owasp.org/www-project-dependency-check/
-#   Or use: wget https://github.com/jeremylong/DependencyCheck/releases/download/v9.0.9/dependency-check-9.0.9-release.zip
-# LLM providers (install as needed)
+# =============================================================================
+# Code Intelligence Platform - Python Dependencies
+# =============================================================================
+
+# --- Core Framework ---
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.5.0
+
+# --- HTTP & Utilities ---
+requests>=2.31.0
+python-dotenv>=1.0.0
+
+# --- Security Scanning (Python) ---
+bandit>=1.7.0
+pip-licenses>=4.3.0
+
+# --- RAG / Vector Database ---
+sentence-transformers>=2.2.0
+faiss-cpu>=1.7.4
+qdrant-client>=1.7.0
+
+# --- LLM Providers (install as needed) ---
 # For OpenAI (production):
-# openai
-# For Ollama (development - default, no package needed, just install Ollama locally)
+# openai>=1.6.0
+# For Ollama (development - default, no pip package needed)
 # For Hugging Face (optional):
-# transformers
-# torch
+# transformers>=4.36.0
+# torch>=2.1.0
+
+# --- Java Scanning Tools (install separately, not via pip) ---
+# SpotBugs:  brew install spotbugs  (or download from GitHub)
+# OWASP Dependency-Check:  brew install dependency-check

@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files (use docker-compose env)
+.env
+
+# Docker
+Dockerfile
+.dockerignore
+
+# Docs and diagrams
+*.md
+*.excalidraw
+*.png
+*.svg
+
+# Test files
+test_*.py
+scan_github_repo.py
+security_scan_summary.md
+
+# Vector DB (mounted as volume)
+.vector_db/
+
+# Repos (mounted as volume)
+repos/
+
+# Git
+.git/
+.gitignore

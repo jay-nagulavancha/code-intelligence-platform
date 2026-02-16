@@ -9,7 +9,8 @@ The MCP GitHub integration provides:
 - **File Operations** - Read file contents directly from GitHub
 - **Issue Management** - Create and manage GitHub issues
 - **Pull Request Access** - Get PR information and diffs
-- **Code Scanning** - Prepare repositories for scanning without cloning
+- **Full Scan Pipeline** - Clone → Build → Scan → LLM Enhance → RAG Store → Create Issues
+- **Auto-Issue Creation** - Automatically creates GitHub Issues for critical/high findings with formatted markdown (severity table, file locations, AI-generated fix suggestions)
 
 ## Setup
 
@@ -298,9 +299,47 @@ The service automatically uses authentication when `GITHUB_TOKEN` is set.
 - Use authenticated requests (set `GITHUB_TOKEN`)
 - Implement rate limiting in your application
 
+## Full Pipeline: Auto-Issue Creation
+
+The `ScanService.scan_github_repo()` method (and the `scan_github_repo.py` CLI) runs a complete pipeline that automatically creates GitHub Issues:
+
+```bash
+# CLI: full pipeline with auto-issue creation
+python scan_github_repo.py jay-nagulavancha spring-boot-spring-security-jwt-authentication
+
+# Skip issue creation
+python scan_github_repo.py jay-nagulavancha spring-boot-spring-security-jwt-authentication --no-issues
+```
+
+### What gets created
+
+When critical or high severity findings are detected, a GitHub Issue is created with:
+- **Severity summary table** (critical/high/medium counts)
+- **Detailed findings** with file paths and line numbers
+- **AI-generated fix suggestions** (when LLM is available)
+- **Recommendations** from the Orchestrator Agent
+- **Labels**: `code-intelligence`, `security`, `critical` (if applicable)
+
+### Python API
+
+```python
+from app.services.scan_service import ScanService
+
+service = ScanService()
+result = service.scan_github_repo(
+    owner="jay-nagulavancha",
+    repo="spring-boot-spring-security-jwt-authentication",
+    create_issues=True,  # Enable auto-issue creation
+)
+
+# Check created issues
+for issue in result.get("github_issues_created", []):
+    print(f"Issue #{issue['number']}: {issue['url']}")
+```
+
 ## Next Steps
 
-- Integrate with scan results to auto-create GitHub issues
-- Use GitHub webhooks for automated scanning
-- Implement PR comment automation
+- Use GitHub webhooks for automated scanning on push/PR
+- Implement PR comment automation (inline review comments)
 - Add support for GitHub Actions integration
+- Support issue updates on re-scan (avoid duplicates)

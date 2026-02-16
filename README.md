@@ -6,11 +6,17 @@ AI-powered, multi-agent code analysis platform with LLM orchestration, RAG integ
 
 ### Multi-Agent System
 - **Orchestrator Agent**: LLM-powered intelligent agent selection and coordination
-- **Security Agent**: Multi-language vulnerability scanning (Python: Bandit, Java: SpotBugs)
-- **OSS Agent**: Multi-language dependency scanning (Python: pip-licenses, Java: OWASP Dependency-Check for vulnerabilities)
+- **Security Agent**: Multi-language vulnerability scanning (Python: Bandit, Java: SpotBugs) with **auto-build**
+- **OSS Agent**: Multi-language dependency scanning (Python: pip-licenses, Java: OWASP Dependency-Check) with **auto-build**
 - **Change Agent**: Git diff analysis for code changes
 - **Deprecation Agent**: AST-based deprecated code detection
 - **GitHub Agent**: MCP-based GitHub repository interactions
+
+### Auto-Build for Java Projects
+- **ProjectBuilder**: Automatically detects and builds Maven/Gradle projects before scanning
+- **Java Version Detection**: Reads `java.version` from `pom.xml` or `sourceCompatibility` from `build.gradle`
+- **JDK Resolution**: Finds the correct JDK on macOS via `/usr/libexec/java_home`
+- **Wrapper Support**: Prefers `mvnw`/`gradlew` wrappers when available
 
 ### LLM Integration
 - **Multiple Providers**: Ollama (default), OpenAI, Hugging Face
@@ -27,9 +33,9 @@ AI-powered, multi-agent code analysis platform with LLM orchestration, RAG integ
 ### GitHub Integration (MCP)
 - **Repository Analysis**: Fetch metadata, files, commits, issues
 - **File Operations**: Read files directly from GitHub without cloning
-- **Issue Management**: Create issues from scan results
+- **Auto-Issue Creation**: Automatically creates GitHub Issues for critical/high findings with formatted markdown
 - **Pull Request Access**: Get PR information and diffs
-- **Scan Without Clone**: Analyze repositories remotely
+- **Full Pipeline**: Clone → Build → Scan → LLM Enhance → RAG Store → Create Issues
 
 ## 📋 Quick Start
 
@@ -106,6 +112,41 @@ curl -X POST http://localhost:8000/api/github/scan \
     "scanTypes": ["security", "oss"]
   }'
 ```
+
+### CLI — Full Pipeline Scanner
+
+The `scan_github_repo.py` script runs the complete pipeline: clone → build → scan → LLM enhance → RAG store → create GitHub Issues.
+
+```bash
+cd backend
+
+# Full pipeline (scan + LLM + RAG + GitHub Issues)
+python scan_github_repo.py <owner> <repo>
+
+# Skip GitHub issue creation
+python scan_github_repo.py <owner> <repo> --no-issues
+
+# Skip RAG storage
+python scan_github_repo.py <owner> <repo> --no-rag
+
+# Custom scan types
+python scan_github_repo.py <owner> <repo> --scan-types security oss deprecation
+```
+
+**Example:**
+```bash
+python scan_github_repo.py jay-nagulavancha spring-boot-spring-security-jwt-authentication
+```
+
+This will:
+1. Fetch repository metadata from GitHub API
+2. Clone the repo (shallow `--depth 1`)
+3. Detect language (Java) → auto-detect Java 17 from `pom.xml` → build with Maven
+4. Run SecurityAgent (SpotBugs) and OSSAgent (OWASP Dependency-Check)
+5. Enhance report with LLM fix suggestions (if Ollama is running)
+6. Store results in RAG (FAISS) for historical context
+7. Create a GitHub Issue for critical/high findings
+8. Save full report to `scan_report_<owner>_<repo>.json`
 
 ## 🏗️ Architecture
 
@@ -216,24 +257,33 @@ Returns status of all services:
 ```
 backend/
 ├── app/
-│   ├── agents/          # Agent implementations
-│   │   ├── orchestrator_agent.py
-│   │   ├── security_agent.py
-│   │   ├── oss_agent.py
-│   │   ├── change_agent.py
-│   │   ├── deprecation_agent.py
-│   │   └── github_agent.py
-│   ├── services/        # Core services
-│   │   ├── scan_service.py
-│   │   ├── llm_service.py
-│   │   ├── rag_service.py
-│   │   └── mcp_github_service.py
-│   ├── api/            # API routes
+│   ├── agents/              # Agent implementations
+│   │   ├── orchestrator_agent.py   # LLM-powered agent selection
+│   │   ├── security_agent.py       # SAST (Bandit + SpotBugs, auto-build)
+│   │   ├── oss_agent.py            # SCA (pip-licenses + OWASP Dep-Check, auto-build)
+│   │   ├── change_agent.py         # Git diff analysis
+│   │   ├── deprecation_agent.py    # AST-based deprecation detection
+│   │   └── github_agent.py         # MCP GitHub interactions
+│   ├── services/            # Core services
+│   │   ├── scan_service.py         # Full pipeline (scan + LLM + RAG + issues)
+│   │   ├── llm_service.py          # Multi-provider LLM (Ollama/OpenAI/HF)
+│   │   ├── rag_service.py          # Vector DB (FAISS/Qdrant)
+│   │   └── mcp_github_service.py   # GitHub API via MCP
+│   ├── utils/               # Utilities
+│   │   ├── project_detector.py     # Language/build tool detection
+│   │   └── project_builder.py      # Auto-build (Maven/Gradle + JDK resolution)
+│   ├── api/                 # API routes
 │   │   └── routes/
 │   │       ├── scans.py
 │   │       └── github.py
-│   └── main.py         # FastAPI app
+│   ├── models/              # Pydantic models
+│   │   ├── scan.py
+│   │   └── report.py
+│   └── main.py              # FastAPI app
+├── scan_github_repo.py      # CLI full-pipeline scanner
 ├── requirements.txt
+├── Dockerfile               # Multi-stage (prod + dev)
+├── .env.example
 ├── LLM_SETUP.md
 ├── MCP_GITHUB_SETUP.md
 ├── JAVA_SCANNING_SETUP.md

@@ -47,25 +47,40 @@ SpotBugs version 4.8.3
 
 ## How It Works
 
-1. **Language Detection**: The Security Agent automatically detects the project language by looking for:
-   - `pom.xml` or `build.gradle` for Java
+1. **Language Detection**: The Security Agent automatically detects the project language using `ProjectDetector`, which looks for:
+   - `pom.xml` or `build.gradle` / `build.gradle.kts` for Java
    - `requirements.txt` or `.py` files for Python
    - Other language indicators
 
-2. **Java Scanning**:
+2. **Auto-Build (Java)**:
+   - If no compiled `.class` files are found, `ProjectBuilder` automatically builds the project
+   - **Detects required Java version** from `pom.xml` properties (`java.version`, `maven.compiler.release`, `maven.compiler.source`) or `build.gradle` (`sourceCompatibility`)
+   - **Resolves the correct JDK** using `/usr/libexec/java_home -v <version>` (macOS) with fallback to scanning `/Library/Java/JavaVirtualMachines/`
+   - Runs `mvn compile -q -DskipTests` (Maven) or `gradlew compileJava -q -x test` (Gradle)
+   - Prefers Maven/Gradle wrappers (`mvnw`, `gradlew`) when present
+
+3. **Java Scanning**:
    - Looks for compiled classes in `target/classes` (Maven) or `build/classes` (Gradle)
    - Runs SpotBugs on the compiled classes
    - Parses XML output and converts to standard format
 
-3. **Python Scanning**:
+4. **Python Scanning**:
    - Runs Bandit on Python source files
    - Returns JSON-formatted results
 
 ## Prerequisites for Java Scanning
 
-### Build Your Java Project First
+### Build Tools
 
-SpotBugs requires compiled `.class` files. Make sure your project is built:
+SpotBugs requires compiled `.class` files. The **auto-build system handles this automatically**, but you need the build tools installed:
+
+- **Maven**: `mvn` must be in PATH (or a `mvnw` wrapper in the project)
+- **Gradle**: `gradle` must be in PATH (or a `gradlew` wrapper in the project)
+- **JDK**: The correct Java version must be installed (auto-detected from `pom.xml`)
+
+### Manual Build (optional)
+
+The auto-build runs automatically, but you can also build manually:
 
 **Maven:**
 ```bash
@@ -127,13 +142,28 @@ Java security issues include:
 
 ### "No compiled classes found"
 
-**Solution**: Build your Java project first:
+The auto-build should handle this automatically. If it still fails:
+
+1. Check that Maven/Gradle is installed and in PATH
+2. Check that the correct JDK is installed (see the `JAVA_HOME` reported in build output)
+3. Try building manually:
 ```bash
 # Maven
 mvn compile
 
 # Gradle
 ./gradlew build
+```
+
+### "Auto-build failed: release version 17 not supported"
+
+The project requires a newer JDK. Install the required version:
+```bash
+# macOS
+brew install --cask temurin@17
+
+# Verify
+/usr/libexec/java_home -V
 ```
 
 ### "SpotBugs is not installed"

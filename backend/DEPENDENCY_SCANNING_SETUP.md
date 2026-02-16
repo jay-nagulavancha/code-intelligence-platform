@@ -53,11 +53,12 @@ Dependency-Check Core version 9.0.9
 
 ## How It Works
 
-1. **Language Detection**: OSS Agent detects project language
+1. **Language Detection**: OSS Agent detects project language via `ProjectDetector`
 2. **Build File Detection**: Looks for `pom.xml` (Maven) or `build.gradle` (Gradle)
-3. **Dependency Scanning**: Runs OWASP Dependency-Check on the project
-4. **Vulnerability Analysis**: Parses JSON report for CVEs and CVSS scores
-5. **Output**: Returns standardized format with vulnerabilities and licenses
+3. **Auto-Build**: `ProjectBuilder` automatically builds the project to download dependency JARs (detects Java version, resolves correct JDK, runs `mvn compile` or `gradlew compileJava`)
+4. **Dependency Scanning**: Runs OWASP Dependency-Check on the project
+5. **Vulnerability Analysis**: Parses JSON report for CVEs and CVSS scores
+6. **Output**: Returns standardized format with vulnerabilities and licenses
 
 ## Usage
 
@@ -162,22 +163,29 @@ Based on CVSS scores:
 
 ### For Java Projects
 
-1. **Build the project first** (to download dependencies):
-   ```bash
-   # Maven
-   mvn dependency:resolve
-   # or
-   mvn package
-   
-   # Gradle
-   ./gradlew dependencies
-   # or
-   ./gradlew build
-   ```
+The **auto-build system handles building automatically** (including downloading dependencies). You just need:
 
-2. **Ensure dependencies are downloaded**:
-   - Maven: Check `~/.m2/repository/`
-   - Gradle: Check `~/.gradle/caches/`
+1. **Build tool installed**: Maven (`mvn`) or Gradle (`gradle`) in PATH — or a wrapper (`mvnw`/`gradlew`) in the project
+2. **Correct JDK installed**: The auto-build detects the required Java version from `pom.xml`/`build.gradle` and resolves the JDK automatically
+
+### Manual Build (optional)
+
+If auto-build fails, you can build manually:
+```bash
+# Maven
+mvn dependency:resolve
+# or
+mvn package
+
+# Gradle
+./gradlew dependencies
+# or
+./gradlew build
+```
+
+Ensure dependencies are downloaded:
+- Maven: Check `~/.m2/repository/`
+- Gradle: Check `~/.gradle/caches/`
 
 ## Example: Finding Vulnerable Dependencies
 

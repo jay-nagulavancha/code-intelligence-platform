@@ -1,0 +1,180 @@
+# =============================================================================
+# Code Intelligence Platform - Docker Compose
+# Services: Backend API, Ollama LLM, Qdrant Vector DB
+# =============================================================================
+#
+# Quick Start:
+#   docker compose up -d              # Start all services
+#   docker compose up -d backend      # Start backend + dependencies only
+#   docker compose logs -f backend    # Follow backend logs
+#
+# Development (with hot-reload + Java tools):
+#   docker compose --profile dev up -d
+#
+# Full stack (with Qdrant):
+#   docker compose --profile full up -d
+#
+# Pull Ollama model (first time):
+#   docker compose exec ollama ollama pull llama3.2:3b
+#
+# Run CLI scanner from container:
+#   docker compose exec backend python scan_github_repo.py <owner> <repo>
+#
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend API - FastAPI Application + Scanning Tools
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: cip-backend
+    ports:
+      - "8000:8000"
+    environment:
+      # LLM Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1000}
+      # OpenAI (uncomment for production)
+      # - LLM_PROVIDER=openai
+      # - OPENAI_API_KEY=${OPENAI_API_KEY}
+      # - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      # GitHub MCP
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Vector DB
+      - VECTOR_DB_TYPE=${VECTOR_DB_TYPE:-faiss}
+      - VECTOR_DB_DIR=/app/.vector_db
+      # Qdrant (when VECTOR_DB_TYPE=qdrant)
+      - QDRANT_URL=qdrant
+      - QDRANT_PORT=6333
+      # Java
+      - JAVA_HOME=/usr/lib/jvm/default-java
+    volumes:
+      - vector-data:/app/.vector_db
+      - repo-data:/app/repos
+      - scan-reports:/app/reports
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - cip-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+  # ---------------------------------------------------------------------------
+  # Backend API - Development (hot-reload, full source mount)
+  # ---------------------------------------------------------------------------
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: cip-backend-dev
+    profiles:
+      - dev
+    ports:
+      - "8000:8000"
+    environment:
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1000}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - VECTOR_DB_TYPE=${VECTOR_DB_TYPE:-faiss}
+      - VECTOR_DB_DIR=/app/.vector_db
+      - QDRANT_URL=qdrant
+      - QDRANT_PORT=6333
+      - JAVA_HOME=/usr/lib/jvm/default-java
+    volumes:
+      # Mount full source for hot-reload (app code + CLI script)
+      - ./backend/app:/app/app
+      - ./backend/scan_github_repo.py:/app/scan_github_repo.py
+      - vector-data:/app/.vector_db
+      - repo-data:/app/repos
+      - scan-reports:/app/reports
+    depends_on:
+      ollama:
+        condition: service_started
+    networks:
+      - cip-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Ollama - Local LLM Server
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cip-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - cip-network
+    restart: unless-stopped
+    # GPU support (uncomment for NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ---------------------------------------------------------------------------
+  # Qdrant - Vector Database (optional, use with VECTOR_DB_TYPE=qdrant)
+  # ---------------------------------------------------------------------------
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: cip-qdrant
+    profiles:
+      - qdrant
+      - full
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    networks:
+      - cip-network
+    restart: unless-stopped
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  ollama-data:
+    driver: local
+    name: cip-ollama-data
+  vector-data:
+    driver: local
+    name: cip-vector-data
+  qdrant-data:
+    driver: local
+    name: cip-qdrant-data
+  repo-data:
+    driver: local
+    name: cip-repo-data
+  scan-reports:
+    driver: local
+    name: cip-scan-reports
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  cip-network:
+    driver: bridge
+    name: cip-network
