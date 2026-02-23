@@ -39,7 +39,9 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1000}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-120}
       # OpenAI (uncomment for production)
       # - LLM_PROVIDER=openai
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -88,7 +90,9 @@ services:
       - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
       - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:3b}
       - OLLAMA_BASE_URL=http://ollama:11434
-      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1000}
+      - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
+      - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
+      - LLM_TIMEOUT=${LLM_TIMEOUT:-120}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - VECTOR_DB_TYPE=${VECTOR_DB_TYPE:-faiss}
       - VECTOR_DB_DIR=/app/.vector_db

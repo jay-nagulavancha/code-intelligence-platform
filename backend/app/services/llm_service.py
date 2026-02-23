@@ -1,7 +1,12 @@
 """
-LLM Service - Handles LLM interactions for report generation, 
+LLM Service - Handles LLM interactions for report generation,
 release notes, vulnerability suggestions, and deprecation summaries.
-Supports multiple providers: Ollama (default), OpenAI, Hugging Face.
+
+Supported providers:
+  - ollama      : Local open-source models (default for development)
+  - groq        : Free cloud inference via Groq (fastest free option)
+  - openai      : OpenAI or any OpenAI-compatible API
+  - huggingface : Hugging Face Inference API
 """
 import os
 import json
@@ -13,56 +18,76 @@ from enum import Enum
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
     OLLAMA = "ollama"
+    GROQ = "groq"
     OPENAI = "openai"
     HUGGINGFACE = "huggingface"
+
+    # Providers that use the OpenAI chat completions format
+    _OPENAI_COMPAT = {"groq", "openai"}
 
 
 class LLMService:
     """
     Service for LLM interactions. Supports multiple providers:
-    - Ollama (default for development, open-source, runs locally)
-    - OpenAI (for production)
-    - Hugging Face (optional, for custom models)
+    - Ollama     — local, open-source, runs on your machine
+    - Groq       — free cloud, blazing fast (~500 tok/s), needs free API key
+    - OpenAI     — cloud, any OpenAI-compatible endpoint
+    - HuggingFace — cloud, Inference API
     """
 
+    # Default models per provider
+    _DEFAULT_MODELS = {
+        "ollama": "llama3.2:1b",
+        "groq": "llama-3.1-8b-instant",
+        "openai": "gpt-4o-mini",
+        "huggingface": "mistralai/Mistral-7B-Instruct-v0.2",
+    }
+
+    _DEFAULT_URLS = {
+        "ollama": "http://localhost:11434",
+        "groq": "https://api.groq.com/openai/v1",
+        "openai": "https://api.openai.com/v1",
+        "huggingface": "https://router.huggingface.co",
+    }
+
     def __init__(
-        self, 
+        self,
         provider: Optional[str] = None,
         model: Optional[str] = None,
         api_key: Optional[str] = None,
-        base_url: Optional[str] = None
+        base_url: Optional[str] = None,
     ):
-        """
-        Initialize LLM service.
-        
-        Args:
-            provider: LLM provider ("ollama", "openai", "huggingface")
-            model: Model name (provider-specific)
-            api_key: API key (for OpenAI/Hugging Face)
-            base_url: Base URL for API (for Ollama/OpenAI)
-        """
-        # Determine provider (default to Ollama for development)
+        # Global settings
+        self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1024"))
+        self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))
+
         self.provider = provider or os.getenv("LLM_PROVIDER", LLMProvider.OLLAMA.value)
-        
-        # Provider-specific defaults
+
         if self.provider == LLMProvider.OLLAMA.value:
-            self.model = model or os.getenv("OLLAMA_MODEL", "llama3.2:3b")
-            self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-            self.api_key = None  # Ollama doesn't require API key
+            self.model = model or os.getenv("OLLAMA_MODEL", self._DEFAULT_MODELS["ollama"])
+            self.base_url = base_url or os.getenv("OLLAMA_BASE_URL", self._DEFAULT_URLS["ollama"])
+            self.api_key = None
+            self.num_ctx = int(os.getenv("OLLAMA_NUM_CTX", "8192"))
             self._available = self._check_ollama_available()
-            
+
+        elif self.provider == LLMProvider.GROQ.value:
+            self.model = model or os.getenv("GROQ_MODEL", self._DEFAULT_MODELS["groq"])
+            self.base_url = base_url or os.getenv("GROQ_BASE_URL", self._DEFAULT_URLS["groq"])
+            self.api_key = api_key or os.getenv("GROQ_API_KEY")
+            self._available = self.api_key is not None
+
         elif self.provider == LLMProvider.OPENAI.value:
-            self.model = model or os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-            self.base_url = base_url or os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+            self.model = model or os.getenv("OPENAI_MODEL", self._DEFAULT_MODELS["openai"])
+            self.base_url = base_url or os.getenv("OPENAI_BASE_URL", self._DEFAULT_URLS["openai"])
             self.api_key = api_key or os.getenv("OPENAI_API_KEY")
             self._available = self.api_key is not None
-            
+
         elif self.provider == LLMProvider.HUGGINGFACE.value:
-            self.model = model or os.getenv("HF_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
+            self.model = model or os.getenv("HF_MODEL", self._DEFAULT_MODELS["huggingface"])
             self.api_key = api_key or os.getenv("HUGGINGFACE_API_KEY")
-            self.base_url = base_url or os.getenv("HF_BASE_URL", "https://api-inference.huggingface.co")
+            self.base_url = base_url or os.getenv("HF_BASE_URL", self._DEFAULT_URLS["huggingface"])
             self._available = self.api_key is not None
-            
+
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
@@ -74,7 +99,6 @@ class LLMService:
                 return False
             models = [m.get("name", "") for m in response.json().get("models", [])]
             if self.model not in models:
-                # Try without tag suffix (e.g. "llama3.2" matches "llama3.2:3b")
                 base = self.model.split(":")[0]
                 if not any(base in m for m in models):
                     print(f"Ollama model '{self.model}' not found. Available: {models}")
@@ -83,9 +107,54 @@ class LLMService:
         except Exception:
             return False
 
+    def warmup(self) -> bool:
+        """
+        Pre-load the model into memory so the first real call is fast.
+        Only needed for Ollama (local); cloud providers are always warm.
+        Returns True if the model responded.
+        """
+        if self.provider != LLMProvider.OLLAMA.value or not self._available:
+            return False
+        try:
+            print(f"  Warming up {self.model} (loading into RAM)...", flush=True)
+            response = requests.post(
+                f"{self.base_url}/api/generate",
+                json={
+                    "model": self.model,
+                    "prompt": "hi",
+                    "stream": False,
+                    "keep_alive": "10m",
+                    "options": {"num_predict": 1, "num_ctx": self.num_ctx},
+                },
+                timeout=180,
+            )
+            if response.status_code == 200:
+                print(f"  Model {self.model} ready.", flush=True)
+                return True
+            else:
+                print(f"  Warmup failed: HTTP {response.status_code}")
+                return False
+        except Exception as e:
+            print(f"  Warmup failed: {e}")
+            return False
+
     def is_available(self) -> bool:
         """Check if LLM service is available."""
         return self._available
+
+    def get_config(self) -> Dict[str, Any]:
+        """Return the active LLM configuration (useful for debugging)."""
+        config = {
+            "provider": self.provider,
+            "model": self.model,
+            "available": self._available,
+            "max_tokens": self.max_tokens,
+            "timeout": self.timeout,
+        }
+        if self.provider == LLMProvider.OLLAMA.value:
+            config["num_ctx"] = self.num_ctx
+            config["base_url"] = self.base_url
+        return config
 
     def _generate_ollama(
         self,
@@ -100,113 +169,125 @@ class LLMService:
         if system_prompt:
             full_prompt = f"{system_prompt}\n\n{prompt}"
 
+        effective_max_tokens = max_tokens or self.max_tokens
+
         payload = {
             "model": self.model,
             "prompt": full_prompt,
             "stream": False,
+            "keep_alive": "10m",
             "options": {
                 "temperature": temperature,
+                "num_ctx": self.num_ctx,
+                "num_predict": effective_max_tokens,
             }
         }
-        
-        if max_tokens:
-            payload["options"]["num_predict"] = max_tokens
 
         try:
             response = requests.post(
                 f"{self.base_url}/api/generate",
                 json=payload,
-                timeout=60
+                timeout=self.timeout,
             )
             response.raise_for_status()
             result = response.json()
             return result.get("response", "").strip()
         except requests.exceptions.Timeout:
-            raise RuntimeError(f"Ollama request timed out (60s). Model may be loading or unresponsive.")
+            raise RuntimeError(
+                f"Ollama request timed out ({self.timeout}s). "
+                f"The model is running on CPU and may need more time. "
+                f"Increase LLM_TIMEOUT in .env or use a smaller model."
+            )
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"Ollama API request failed: {str(e)}")
 
-    def _generate_openai(
+    def _generate_openai_compat(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
-        """Generate text using OpenAI API."""
+        """
+        Generate text using any OpenAI-compatible chat completions API.
+        Works with: OpenAI, Groq, Together AI, OpenRouter, etc.
+        Uses raw HTTP requests — no openai package required.
+        """
+        effective_max_tokens = max_tokens or self.max_tokens
+
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": effective_max_tokens,
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+
         try:
-            import openai
-            
-            client = openai.OpenAI(
-                api_key=self.api_key,
-                base_url=self.base_url
+            response = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=self.timeout,
             )
-            
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
-
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens
-            )
-
-            return response.choices[0].message.content.strip()
-        except ImportError:
-            raise RuntimeError("openai package is not installed. Run: pip install openai")
-        except Exception as e:
-            raise RuntimeError(f"OpenAI API request failed: {str(e)}")
+            response.raise_for_status()
+            result = response.json()
+            return result["choices"][0]["message"]["content"].strip()
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"{self.provider} request timed out ({self.timeout}s)")
+        except requests.exceptions.RequestException as e:
+            raise RuntimeError(f"{self.provider} API request failed: {str(e)}")
 
     def _generate_huggingface(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
     ) -> str:
-        """Generate text using Hugging Face API."""
-        # Combine system prompt and user prompt
-        full_prompt = prompt
+        """Generate text using Hugging Face Inference API (router.huggingface.co)."""
+        effective_max_tokens = max_tokens or self.max_tokens
+
+        messages = []
         if system_prompt:
-            full_prompt = f"{system_prompt}\n\n{prompt}"
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": effective_max_tokens,
+            "temperature": temperature,
+        }
 
         headers = {
-            "Authorization": f"Bearer {self.api_key}"
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
         }
-        
-        payload = {
-            "inputs": full_prompt,
-            "parameters": {
-                "temperature": temperature,
-                "return_full_text": False
-            }
-        }
-        
-        if max_tokens:
-            payload["parameters"]["max_new_tokens"] = max_tokens
 
         try:
             response = requests.post(
-                f"{self.base_url}/models/{self.model}",
+                f"{self.base_url}/hf-inference/models/{self.model}/v1/chat/completions",
                 headers=headers,
                 json=payload,
-                timeout=120
+                timeout=self.timeout,
             )
             response.raise_for_status()
             result = response.json()
-            
-            # Handle different response formats
-            if isinstance(result, list) and len(result) > 0:
-                return result[0].get("generated_text", "").strip()
-            elif isinstance(result, dict):
-                return result.get("generated_text", "").strip()
-            else:
-                return str(result).strip()
+            return result["choices"][0]["message"]["content"].strip()
+        except requests.exceptions.Timeout:
+            raise RuntimeError(f"HuggingFace request timed out ({self.timeout}s)")
         except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"Hugging Face API request failed: {str(e)}")
+            raise RuntimeError(f"HuggingFace API request failed: {str(e)}")
 
     def generate(
         self, 
@@ -236,8 +317,8 @@ class LLMService:
 
         if self.provider == LLMProvider.OLLAMA.value:
             return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
-        elif self.provider == LLMProvider.OPENAI.value:
-            return self._generate_openai(prompt, system_prompt, temperature, max_tokens)
+        elif self.provider in (LLMProvider.OPENAI.value, LLMProvider.GROQ.value):
+            return self._generate_openai_compat(prompt, system_prompt, temperature, max_tokens)
         elif self.provider == LLMProvider.HUGGINGFACE.value:
             return self._generate_huggingface(prompt, system_prompt, temperature, max_tokens)
         else:

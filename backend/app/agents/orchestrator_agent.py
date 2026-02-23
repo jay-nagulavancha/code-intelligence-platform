@@ -143,7 +143,7 @@ Respond with valid JSON containing:
                     "You are an expert code analyst. "
                     "Respond ONLY with valid JSON, no markdown fences."
                 ),
-                max_tokens=1024,
+                max_tokens=512,
             )
             # Extract JSON from response
             text = response.strip()

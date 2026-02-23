@@ -50,7 +50,11 @@ def on_progress(step: int, message: str):
 
 def print_service_status(llm: LLMService, rag, github: MCPGitHubService):
     print(f"\n  Service status:")
-    llm_status = f"✅ {llm.provider}/{llm.model}" if llm.is_available() else "⚠️  unavailable (reports will use fallback)"
+    if llm.is_available():
+        cfg = llm.get_config()
+        llm_status = f"✅ {llm.provider}/{llm.model} (ctx={cfg.get('num_ctx','?')}, max_tok={cfg['max_tokens']}, timeout={cfg['timeout']}s)"
+    else:
+        llm_status = "⚠️  unavailable (reports will use fallback)"
     print(f"    LLM     : {llm_status}")
     if rag is None:
         print(f"    RAG     : ⏭️  skipped (--no-rag)")
@@ -271,6 +275,10 @@ def main():
     )
 
     use_llm = not args.no_llm and llm_service.is_available()
+
+    # Pre-load the model into RAM so the first LLM call doesn't time out
+    if use_llm:
+        llm_service.warmup()
 
     try:
         result = scan_service.scan_github_repo(
