@@ -1,0 +1,606 @@
+{
+  "agents_executed": [
+    "security",
+    "oss"
+  ],
+  "report": {
+    "summary": "The security scan of the spring-boot-spring-security-jwt-authentication project revealed 9 security issues, with 5 of them classified as MALICIOUS_CODE, indicating potential exposure of internal representation. These issues are related to returning references to mutable objects, posing a medium severity risk.",
+    "critical_issues": [
+      {
+        "issue_id": "spotbugs-EI_EXPOSE_REP",
+        "description": "May expose internal representation by returning reference to mutable object"
+      },
+      {
+        "issue_id": "spotbugs-EI_EXPOSE_REP2",
+        "description": "May expose internal representation by incorporating reference to mutable object"
+      }
+    ],
+    "recommendations": [
+      {
+        "recommendation": "Review the code in User.java, SignupRequest.java, and JwtResponse.java for potential exposure of internal representation."
+      },
+      {
+        "recommendation": "Apply fix or refactor the code to prevent exposure of internal representation and ensure secure object handling."
+      },
+      {
+        "recommendation": "Consider implementing additional security measures to minimize the risk of malicious code execution."
+      }
+    ],
+    "next_steps": [
+      {
+        "step": "Re-scan the project after addressing the identified security issues."
+      },
+      {
+        "step": "Continuously monitor the project for new security vulnerabilities and update the dependencies regularly."
+      },
+      {
+        "step": "Develop a comprehensive security strategy to ensure the overall security posture of the project."
+      }
+    ],
+    "raw_issues": [
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/models/User.java",
+        "line": "35",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/models/User.java",
+        "line": "35",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/request/SignupRequest.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/request/SignupRequest.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/response/JwtResponse.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/response/JwtResponse.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/security/services/UserDetailsImpl.java",
+        "line": "30",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/security/services/UserDetailsImpl.java",
+        "line": "30",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "BAD_PRACTICE",
+        "bug_type": "HE_EQUALS_USE_HASHCODE",
+        "message": "Class defines equals() and uses Object.hashCode()",
+        "file": "com/bezkoder/springjwt/security/services/UserDetailsImpl.java",
+        "line": "30",
+        "severity": "high"
+      }
+    ],
+    "vulnerability_suggestions": [
+      {
+        "id": 1,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP",
+          "message": "May expose internal representation by returning reference to mutable object"
+        },
+        "issue": "Returning a mutable object reference from a method can lead to unexpected behavior when the returned object is modified by an external entity.",
+        "fix": [
+          {
+            "code": "public User getUser() { return new User(user); }",
+            "description": "Instead of returning a reference to the existing User object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid returning references to mutable objects from methods."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 2,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP2",
+          "message": "May expose internal representation by incorporating reference to mutable object"
+        },
+        "issue": "Incorporating a mutable object reference into another object can lead to unexpected behavior when the referenced object is modified.",
+        "fix": [
+          {
+            "code": "public User getUser() { return new User(user); }",
+            "description": "Instead of incorporating the existing User object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid incorporating references to mutable objects into other objects."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 3,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP",
+          "message": "May expose internal representation by returning reference to mutable object"
+        },
+        "issue": "Returning a mutable object reference from a method can lead to unexpected behavior when the returned object is modified by an external entity.",
+        "fix": [
+          {
+            "code": "public SignupRequest getSignupRequest() { return new SignupRequest(signupRequest); }",
+            "description": "Instead of returning a reference to the existing SignupRequest object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid returning references to mutable objects from methods."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 4,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP2",
+          "message": "May expose internal representation by incorporating reference to mutable object"
+        },
+        "issue": "Incorporating a mutable object reference into another object can lead to unexpected behavior when the referenced object is modified.",
+        "fix": [
+          {
+            "code": "public SignupRequest getSignupRequest() { return new SignupRequest(signupRequest); }",
+            "description": "Instead of incorporating the existing SignupRequest object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid incorporating references to mutable objects into other objects."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 5,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP",
+          "message": "May expose internal representation by returning reference to mutable object"
+        },
+        "issue": "Returning a mutable object reference from a method can lead to unexpected behavior when the returned object is modified by an external entity.",
+        "fix": [
+          {
+            "code": "public JwtResponse getJwtResponse() { return new JwtResponse(jwtResponse); }",
+            "description": "Instead of returning a reference to the existing JwtResponse object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid returning references to mutable objects from methods."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 6,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP2",
+          "message": "May expose internal representation by incorporating reference to mutable object"
+        },
+        "issue": "Incorporating a mutable object reference into another object can lead to unexpected behavior when the referenced object is modified.",
+        "fix": [
+          {
+            "code": "public JwtResponse getJwtResponse() { return new JwtResponse(jwtResponse); }",
+            "description": "Instead of incorporating the existing JwtResponse object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid incorporating references to mutable objects into other objects."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 7,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP",
+          "message": "May expose internal representation by returning reference to mutable object"
+        },
+        "issue": "Returning a mutable object reference from a method can lead to unexpected behavior when the returned object is modified by an external entity.",
+        "fix": [
+          {
+            "code": "public UserDetailsImpl getUserDetails() { return new UserDetailsImpl(userDetails); }",
+            "description": "Instead of returning a reference to the existing UserDetailsImpl object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid returning references to mutable objects from methods."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 8,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "MALICIOUS_CODE",
+          "bug_type": "EI_EXPOSE_REP2",
+          "message": "May expose internal representation by incorporating reference to mutable object"
+        },
+        "issue": "Incorporating a mutable object reference into another object can lead to unexpected behavior when the referenced object is modified.",
+        "fix": [
+          {
+            "code": "public UserDetailsImpl getUserDetails() { return new UserDetailsImpl(userDetails); }",
+            "description": "Instead of incorporating the existing UserDetailsImpl object, create a new copy of it."
+          }
+        ],
+        "best_practice": [
+          "Use immutable objects whenever possible.",
+          "Avoid incorporating references to mutable objects into other objects."
+        ],
+        "priority": "medium"
+      },
+      {
+        "id": 9,
+        "vulnerability": {
+          "type": "security",
+          "language": "java",
+          "tool": "spotbugs",
+          "category": "BAD_PRACTICE",
+          "bug_type": "HE_EQUALS_USE_HASHCODE",
+          "message": "Class defines equals() and uses Object.hashCode()"
+        },
+        "issue": "Using Object.hashCode() instead of overriding hashCode() can lead to inconsistent hash code values and affect performance.",
+        "fix": [
+          {
+            "code": "public int hashCode() { int result = 17; result = 31 * result + (userDetails != null ? userDetails.hashCode() : 0); return result; }",
+            "description": "Override the hashCode() method to provide a consistent hash code value based on the object's state."
+          }
+        ],
+        "best_practice": [
+          "Always override hashCode() when overriding equals().",
+          "Use consistent hash code values to improve performance."
+        ],
+        "priority": "high"
+      }
+    ]
+  },
+  "raw_results": {
+    "security": [
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/models/User.java",
+        "line": "35",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/models/User.java",
+        "line": "35",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/request/SignupRequest.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/request/SignupRequest.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/response/JwtResponse.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/payload/response/JwtResponse.java",
+        "line": "7",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP",
+        "message": "May expose internal representation by returning reference to mutable object",
+        "file": "com/bezkoder/springjwt/security/services/UserDetailsImpl.java",
+        "line": "30",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "MALICIOUS_CODE",
+        "bug_type": "EI_EXPOSE_REP2",
+        "message": "May expose internal representation by incorporating reference to mutable object",
+        "file": "com/bezkoder/springjwt/security/services/UserDetailsImpl.java",
+        "line": "30",
+        "severity": "medium"
+      },
+      {
+        "type": "security",
+        "language": "java",
+        "tool": "spotbugs",
+        "category": "BAD_PRACTICE",
+        "bug_type": "HE_EQUALS_USE_HASHCODE",
+        "message": "Class defines equals() and uses Object.hashCode()",
+        "file": "com/bezkoder/springjwt/security/services/UserDetailsImpl.java",
+        "line": "30",
+        "severity": "high"
+      }
+    ],
+    "oss": []
+  },
+  "llm_enhanced": true,
+  "scan_id": "df6129cb-3df1-4512-bc60-f427d5074a16",
+  "historical_context": {},
+  "repository": "jay-nagulavancha/spring-boot-spring-security-jwt-authentication",
+  "language": "java",
+  "build_result": {
+    "success": true,
+    "build_system": "maven",
+    "message": "Maven build succeeded (JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home)"
+  },
+  "repo_info": {
+    "id": 1158931712,
+    "node_id": "R_kgDORRPlAA",
+    "name": "spring-boot-spring-security-jwt-authentication",
+    "full_name": "jay-nagulavancha/spring-boot-spring-security-jwt-authentication",
+    "private": false,
+    "owner": {
+      "login": "jay-nagulavancha",
+      "id": 261701196,
+      "node_id": "U_kgDOD5k-TA",
+      "avatar_url": "https://avatars.githubusercontent.com/u/261701196?v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/jay-nagulavancha",
+      "html_url": "https://github.com/jay-nagulavancha",
+      "followers_url": "https://api.github.com/users/jay-nagulavancha/followers",
+      "following_url": "https://api.github.com/users/jay-nagulavancha/following{/other_user}",
+      "gists_url": "https://api.github.com/users/jay-nagulavancha/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/jay-nagulavancha/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/jay-nagulavancha/subscriptions",
+      "organizations_url": "https://api.github.com/users/jay-nagulavancha/orgs",
+      "repos_url": "https://api.github.com/users/jay-nagulavancha/repos",
+      "events_url": "https://api.github.com/users/jay-nagulavancha/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/jay-nagulavancha/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
+    },
+    "html_url": "https://github.com/jay-nagulavancha/spring-boot-spring-security-jwt-authentication",
+    "description": null,
+    "fork": false,
+    "url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication",
+    "forks_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/forks",
+    "keys_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/keys{/key_id}",
+    "collaborators_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/collaborators{/collaborator}",
+    "teams_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/teams",
+    "hooks_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/hooks",
+    "issue_events_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/issues/events{/number}",
+    "events_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/events",
+    "assignees_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/assignees{/user}",
+    "branches_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/branches{/branch}",
+    "tags_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/tags",
+    "blobs_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/git/blobs{/sha}",
+    "git_tags_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/git/tags{/sha}",
+    "git_refs_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/git/refs{/sha}",
+    "trees_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/git/trees{/sha}",
+    "statuses_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/statuses/{sha}",
+    "languages_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/languages",
+    "stargazers_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/stargazers",
+    "contributors_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/contributors",
+    "subscribers_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/subscribers",
+    "subscription_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/subscription",
+    "commits_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/commits{/sha}",
+    "git_commits_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/git/commits{/sha}",
+    "comments_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/comments{/number}",
+    "issue_comment_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/issues/comments{/number}",
+    "contents_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/contents/{+path}",
+    "compare_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/compare/{base}...{head}",
+    "merges_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/merges",
+    "archive_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/{archive_format}{/ref}",
+    "downloads_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/downloads",
+    "issues_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/issues{/number}",
+    "pulls_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/pulls{/number}",
+    "milestones_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/milestones{/number}",
+    "notifications_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/notifications{?since,all,participating}",
+    "labels_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/labels{/name}",
+    "releases_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/releases{/id}",
+    "deployments_url": "https://api.github.com/repos/jay-nagulavancha/spring-boot-spring-security-jwt-authentication/deployments",
+    "created_at": "2026-02-16T05:11:28Z",
+    "updated_at": "2026-02-20T18:25:29Z",
+    "pushed_at": "2026-02-16T05:17:19Z",
+    "git_url": "git://github.com/jay-nagulavancha/spring-boot-spring-security-jwt-authentication.git",
+    "ssh_url": "git@github.com:jay-nagulavancha/spring-boot-spring-security-jwt-authentication.git",
+    "clone_url": "https://github.com/jay-nagulavancha/spring-boot-spring-security-jwt-authentication.git",
+    "svn_url": "https://github.com/jay-nagulavancha/spring-boot-spring-security-jwt-authentication",
+    "homepage": null,
+    "size": 137,
+    "stargazers_count": 0,
+    "watchers_count": 0,
+    "language": "Java",
+    "has_issues": true,
+    "has_projects": true,
+    "has_downloads": true,
+    "has_wiki": false,
+    "has_pages": false,
+    "has_discussions": false,
+    "forks_count": 0,
+    "mirror_url": null,
+    "archived": false,
+    "disabled": false,
+    "open_issues_count": 2,
+    "license": null,
+    "allow_forking": true,
+    "is_template": false,
+    "web_commit_signoff_required": false,
+    "has_pull_requests": true,
+    "pull_request_creation_policy": "all",
+    "topics": [],
+    "visibility": "public",
+    "forks": 0,
+    "open_issues": 2,
+    "watchers": 0,
+    "default_branch": "main",
+    "permissions": {
+      "admin": true,
+      "maintain": true,
+      "push": true,
+      "triage": true,
+      "pull": true
+    },
+    "temp_clone_token": "",
+    "allow_squash_merge": true,
+    "allow_merge_commit": true,
+    "allow_rebase_merge": true,
+    "allow_auto_merge": false,
+    "delete_branch_on_merge": false,
+    "allow_update_branch": false,
+    "use_squash_pr_title_as_default": false,
+    "squash_merge_commit_message": "COMMIT_MESSAGES",
+    "squash_merge_commit_title": "COMMIT_OR_PR_TITLE",
+    "merge_commit_message": "PR_TITLE",
+    "merge_commit_title": "MERGE_MESSAGE",
+    "security_and_analysis": {
+      "secret_scanning": {
+        "status": "disabled"
+      },
+      "secret_scanning_push_protection": {
+        "status": "disabled"
+      },
+      "dependabot_security_updates": {
+        "status": "disabled"
+      },
+      "secret_scanning_non_provider_patterns": {
+        "status": "disabled"
+      },
+      "secret_scanning_validity_checks": {
+        "status": "disabled"
+      }
+    },
+    "network_count": 0,
+    "subscribers_count": 0
+  }
+}
