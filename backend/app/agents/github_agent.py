@@ -1,20 +1,20 @@
 """
-GitHub Agent - Uses MCP GitHub Service to interact with GitHub repositories.
+GitHub Analyzer - Uses MCP GitHub Service to interact with GitHub repositories.
 Can fetch repository data, read files, create issues, and more.
 """
 from typing import List, Dict, Optional, Any
 from app.services.mcp_github_service import MCPGitHubService
 
 
-class GitHubAgent:
+class GitHubAnalyzer:
     """
-    Agent that interacts with GitHub using MCP protocol.
+    Analyzer that interacts with GitHub using MCP protocol.
     Provides GitHub operations as tools for the Orchestrator Agent.
     """
 
     def __init__(self, github_service: Optional[MCPGitHubService] = None):
         """
-        Initialize GitHub Agent.
+        Initialize GitHub Analyzer.
         
         Args:
             github_service: MCP GitHub service instance
@@ -233,3 +233,4 @@ class GitHubAgent:
             return issue
         except Exception as e:
             return {"error": str(e)}
+

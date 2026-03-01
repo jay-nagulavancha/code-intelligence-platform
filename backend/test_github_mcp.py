@@ -22,7 +22,7 @@ except ImportError:
                     os.environ[key.strip()] = value.strip()
 
 from app.services.mcp_github_service import MCPGitHubService
-from app.agents.github_agent import GitHubAgent
+from app.agents.github_agent import GitHubAnalyzer
 import requests
 
 def test_github_mcp():
@@ -131,13 +131,13 @@ def test_github_mcp():
     except Exception as e:
         print(f"   ❌ Failed: {str(e)}")
     
-    # Test GitHub Agent
-    print(f"\n4. Testing GitHub Agent:")
-    github_agent = GitHubAgent()
+    # Test GitHub Analyzer
+    print(f"\n4. Testing GitHub Analyzer:")
+    github_analyzer = GitHubAnalyzer()
     
     try:
         print(f"\n   Test: Analyze Repository")
-        analysis = github_agent.analyze_repository(
+        analysis = github_analyzer.analyze_repository(
             owner=test_owner,
             repo=test_repo,
             include_files=True,

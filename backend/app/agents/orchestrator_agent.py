@@ -5,11 +5,11 @@ Gracefully falls back when LLM is unavailable or slow.
 """
 from typing import List, Dict, Optional, Any
 import json
-from app.agents.security_agent import SecurityAgent
-from app.agents.oss_agent import OSSAgent
-from app.agents.change_agent import ChangeAgent
-from app.agents.deprecation_agent import DeprecationAgent
-from app.agents.github_agent import GitHubAgent
+from app.agents.security_agent import SecurityAnalyzer
+from app.agents.oss_agent import OSSAnalyzer
+from app.agents.change_agent import ChangeAnalyzer
+from app.agents.deprecation_agent import DeprecationAnalyzer
+from app.agents.github_agent import GitHubAnalyzer
 from app.services.llm_service import LLMService
 
 
@@ -26,11 +26,11 @@ class OrchestratorAgent:
 
     def __init__(self, llm_service: Optional[LLMService] = None):
         self.llm_service = llm_service or LLMService()
-        self.security_agent = SecurityAgent()
-        self.oss_agent = OSSAgent()
-        self.change_agent = ChangeAgent()
-        self.deprecation_agent = DeprecationAgent()
-        self.github_agent = GitHubAgent()
+        self.security_analyzer = SecurityAnalyzer()
+        self.oss_analyzer = OSSAnalyzer()
+        self.change_analyzer = ChangeAnalyzer()
+        self.deprecation_analyzer = DeprecationAnalyzer()
+        self.github_analyzer = GitHubAnalyzer()
 
     def decide_agents(
         self,
@@ -56,16 +56,16 @@ class OrchestratorAgent:
         for agent_name in agents_to_run:
             try:
                 if agent_name == "security":
-                    results["security"] = self.security_agent.run(repo_path)
+                    results["security"] = self.security_analyzer.run(repo_path)
                 elif agent_name == "oss":
-                    results["oss"] = self.oss_agent.run(repo_path)
+                    results["oss"] = self.oss_analyzer.run(repo_path)
                 elif agent_name == "change":
-                    results["change"] = self.change_agent.run(repo_path)
+                    results["change"] = self.change_analyzer.run(repo_path)
                 elif agent_name == "deprecation":
-                    results["deprecation"] = self.deprecation_agent.run(repo_path)
+                    results["deprecation"] = self.deprecation_analyzer.run(repo_path)
             except Exception as e:
                 results[agent_name] = []
-                print(f"{agent_name.title()}Agent failed: {e}")
+                print(f"{agent_name.title()}Analyzer failed: {e}")
 
         return results
 

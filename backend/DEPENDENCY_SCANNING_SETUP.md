@@ -1,6 +1,6 @@
 # Dependency Vulnerability Scanning Setup
 
-The OSS Agent now supports scanning dependencies for known vulnerabilities in addition to license information.
+The OSS Analyzer now supports scanning dependencies for known vulnerabilities in addition to license information.
 
 ## Supported Languages
 
@@ -53,7 +53,7 @@ Dependency-Check Core version 9.0.9
 
 ## How It Works
 
-1. **Language Detection**: OSS Agent detects project language via `ProjectDetector`
+1. **Language Detection**: OSS Analyzer detects project language via `ProjectDetector`
 2. **Build File Detection**: Looks for `pom.xml` (Maven) or `build.gradle` (Gradle)
 3. **Auto-Build**: `ProjectBuilder` automatically builds the project to download dependency JARs (detects Java version, resolves correct JDK, runs `mvn compile` or `gradlew compileJava`)
 4. **Dependency Scanning**: Runs OWASP Dependency-Check on the project
@@ -65,9 +65,9 @@ Dependency-Check Core version 9.0.9
 ### Automatic Detection
 
 ```python
-from app.agents.oss_agent import OSSAgent
+from app.agents.oss_agent import OSSAnalyzer
 
-agent = OSSAgent()
+agent = OSSAnalyzer()
 
 # Auto-detects language and scans dependencies
 issues = agent.run("/path/to/java/project")
@@ -190,9 +190,9 @@ Ensure dependencies are downloaded:
 ## Example: Finding Vulnerable Dependencies
 
 ```python
-from app.agents.oss_agent import OSSAgent
+from app.agents.oss_agent import OSSAnalyzer
 
-agent = OSSAgent()
+agent = OSSAnalyzer()
 results = agent.run("/path/to/java/project")
 
 # Filter for vulnerabilities
@@ -217,15 +217,15 @@ print(f"Found {len(vulnerable_deps)} high/critical vulnerabilities")
 Combine dependency scanning with code scanning:
 
 ```python
-from app.agents.security_agent import SecurityAgent
-from app.agents.oss_agent import OSSAgent
+from app.agents.security_agent import SecurityAnalyzer
+from app.agents.oss_agent import OSSAnalyzer
 
 # Code-level vulnerabilities
-security_agent = SecurityAgent()
+security_agent = SecurityAnalyzer()
 code_issues = security_agent.run("/path/to/java/project")
 
 # Dependency vulnerabilities
-oss_agent = OSSAgent()
+oss_agent = OSSAnalyzer()
 dep_issues = oss_agent.run("/path/to/java/project")
 
 # Combine results

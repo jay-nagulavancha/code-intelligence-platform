@@ -1,16 +1,16 @@
 """Agents package."""
 from .orchestrator_agent import OrchestratorAgent
-from .security_agent import SecurityAgent
-from .oss_agent import OSSAgent
-from .change_agent import ChangeAgent
-from .deprecation_agent import DeprecationAgent
-from .github_agent import GitHubAgent
+from .security_agent import SecurityAnalyzer
+from .oss_agent import OSSAnalyzer
+from .change_agent import ChangeAnalyzer
+from .deprecation_agent import DeprecationAnalyzer
+from .github_agent import GitHubAnalyzer
 
 __all__ = [
     "OrchestratorAgent",
-    "SecurityAgent",
-    "OSSAgent",
-    "ChangeAgent",
-    "DeprecationAgent",
-    "GitHubAgent"
+    "SecurityAnalyzer",
+    "OSSAnalyzer",
+    "ChangeAnalyzer",
+    "DeprecationAnalyzer",
+    "GitHubAnalyzer",
 ]

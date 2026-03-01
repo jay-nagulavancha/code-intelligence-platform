@@ -15,7 +15,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from app.agents.orchestrator_agent import OrchestratorAgent
-from app.agents.github_agent import GitHubAgent
+from app.agents.github_agent import GitHubAnalyzer
 from app.services.llm_service import LLMService
 from app.services.rag_service import RAGService
 from app.services.mcp_github_service import MCPGitHubService
@@ -38,7 +38,7 @@ class ScanService:
         self.llm_service = llm_service or LLMService()
         self.rag_service = rag_service  # Can be None (--no-rag)
         self.github_service = github_service or MCPGitHubService()
-        self.github_agent = GitHubAgent(self.github_service)
+        self.github_analyzer = GitHubAnalyzer(self.github_service)
         self.orchestrator = OrchestratorAgent(llm_service=self.llm_service)
         self.detector = ProjectDetector()
         self.builder = ProjectBuilder()

@@ -230,12 +230,12 @@ issue = github.create_issue(
 )
 ```
 
-### Using GitHub Agent
+### Using GitHub Analyzer
 
 ```python
-from app.agents.github_agent import GitHubAgent
+from app.agents.github_agent import GitHubAnalyzer
 
-agent = GitHubAgent()
+agent = GitHubAnalyzer()
 
 # Analyze repository
 analysis = agent.analyze_repository(
@@ -256,7 +256,7 @@ scan_data = agent.scan_repository_for_scanning(
 
 ## Integration with Orchestrator Agent
 
-The GitHub Agent is integrated into the Orchestrator Agent, allowing LLM-powered decisions to use GitHub tools:
+The GitHub Analyzer is integrated into the Orchestrator Agent, allowing LLM-powered decisions to use GitHub tools:
 
 ```python
 from app.agents.orchestrator_agent import OrchestratorAgent

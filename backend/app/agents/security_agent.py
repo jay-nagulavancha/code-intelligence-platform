@@ -1,5 +1,5 @@
 """
-Security Agent - Multi-language security vulnerability scanning.
+Security Analyzer - Multi-language security vulnerability scanning.
 Supports Python (Bandit) and Java (SpotBugs).
 Automatically builds Java projects before scanning.
 """
@@ -11,7 +11,7 @@ from app.utils.project_detector import ProjectDetector
 from app.utils.project_builder import ProjectBuilder
 
 
-class SecurityAgent:
+class SecurityAnalyzer:
     """
     Multi-language security vulnerability scanner.
     Automatically detects project language and uses appropriate tool.

@@ -1,10 +1,10 @@
-# Multi-Agent Code Intelligence Platform - Architecture
+# Orchestrator + Analyzer Code Intelligence Platform - Architecture
 
 ## Visual Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                    Multi-Agent Code Intelligence Platform                    │
+│             Orchestrator + Analyzer Code Intelligence Platform               │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────┐      CLI: scan_github_repo.py
@@ -21,13 +21,13 @@
 │    1. Fetch repo info (GitHub API)                                │
 │    2. Clone repository (--depth 1)                                │
 │    3. Detect language ──▶ ProjectBuilder: auto-build Java         │
-│    4. Run agents (Orchestrator) ──▶ LLM enhance ──▶ RAG store    │
+│    4. Run analyzers (Orchestrator) ──▶ LLM enhance ──▶ RAG store │
 │    5. Create GitHub Issues (critical/high findings)               │
 │    6. Cleanup temp clone                                          │
 │                                                                   │
 │  run_scan()                                                       │
 │    1. RAG historical context query                                │
-│    2. Orchestrator: decide → run agents → combine (LLM)           │
+│    2. Orchestrator: decide → run analyzers → combine (LLM)        │
 │    3. LLM enhancement (fix suggestions, summaries, release notes) │
 │    4. RAG storage                                                 │
 └────────┬──────────────────────────────────────────────────────────┘
@@ -36,7 +36,7 @@
          ▼          ▼          ▼          ▼          ▼          ▼
 ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
 │  Security    │ │    OSS      │ │   Change     │ │ Deprecation  │ │   GitHub     │
-│   Agent      │ │   Agent     │ │   Agent      │ │    Agent     │ │   Agent      │
+│  Analyzer    │ │  Analyzer   │ │  Analyzer    │ │  Analyzer    │ │  Analyzer    │
 │              │ │             │ │              │ │              │ │  (MCP)       │
 │ Bandit  (Py) │ │pip-licenses │ │  (git diff)  │ │ (AST rules)  │ │              │
 │ SpotBugs(Ja) │ │OWASP DepChk │ │              │ │              │ │              │
@@ -79,7 +79,7 @@
 - **Responsibilities**:
   - Clones GitHub repositories (shallow clone `--depth 1`)
   - Detects language and triggers ProjectBuilder for Java
-  - Coordinates Orchestrator Agent for agent execution
+  - Coordinates Orchestrator Agent for analyzer execution
   - Queries RAG for historical context before scanning
   - Enhances results with LLM (fix suggestions, summaries, release notes)
   - Stores results in RAG for future scans
@@ -95,17 +95,17 @@
   - `get_historical_context()` — retrieve patterns and trends for current scan
 
 ### 4. Orchestrator Agent
-- **Purpose**: LLM-powered intelligent agent selection and report combination
+- **Purpose**: LLM-powered analyzer selection and report combination
 - **Capabilities**:
   - Analyzes scan request and project context
-  - Uses LLM to decide which agents to execute (falls back to direct mapping)
-  - Runs selected agents and collects outputs
+  - Uses LLM to decide which analyzers to execute (falls back to direct mapping)
+  - Runs selected analyzers and collects outputs
   - Uses LLM to combine outputs into coherent report with recommendations
   - Generates actionable next steps
 
-### 5. Tool-Calling Agents
+### 5. Specialized Analyzers
 
-#### Security Agent
+#### Security Analyzer
 - **Tools**: 
   - Python: Bandit (static analysis)
   - Java: SpotBugs (static analysis)
@@ -116,7 +116,7 @@
   - Standardized output format
 - **Output**: Security vulnerabilities with severity, confidence, CWE, file, line
 
-#### OSS Agent
+#### OSS Analyzer
 - **Tools**: 
   - Python: pip-licenses (license information)
   - Java: OWASP Dependency-Check (licenses + vulnerability scanning)
@@ -128,15 +128,15 @@
   - Provides CVSS scores and severity levels
 - **Output**: Dependencies with licenses and known vulnerabilities (CVE, CVSS, severity)
 
-#### Change Agent
+#### Change Analyzer
 - **Tool**: git diff
 - **Output**: Code changes with file paths, line numbers, change types
 
-#### Deprecation Agent
+#### Deprecation Analyzer
 - **Tool**: AST analysis
 - **Output**: Deprecated code patterns with locations
 
-#### GitHub Agent
+#### GitHub Analyzer
 - **Protocol**: Model Context Protocol (MCP)
 - **Service**: MCP GitHub Service
 - **Capabilities**:
@@ -196,7 +196,7 @@
 3. **Clone** → Shallow clone repository to temp directory (`git clone --depth 1`)
 4. **Detect & Build** → `ProjectDetector` identifies language; `ProjectBuilder` auto-builds Java projects (resolves correct JDK version)
 5. **RAG Query** → `ScanService` queries RAG for historical context from similar past scans
-6. **Orchestration** → `OrchestratorAgent` uses LLM to decide which agents to run, then executes them
+6. **Orchestration** → `OrchestratorAgent` uses LLM to decide which analyzers to run, then executes them
 7. **LLM Enhancement** → LLM generates vulnerability fix suggestions, release notes, deprecation summaries
 8. **GitHub Issues** → Auto-create GitHub Issues for critical/high findings (formatted markdown with severity table, file locations, AI-generated fix suggestions)
 9. **RAG Storage** → Results stored as vector embeddings for future queries
@@ -218,9 +218,9 @@
 
 ## Key Features
 
-### Multi-Agent Orchestration
-- LLM-powered agent selection
-- Parallel agent execution
+### Orchestrator-Led Analysis
+- LLM-powered analyzer selection
+- Parallel analyzer execution
 - Intelligent output combination with recommendations
 
 ### Auto-Build for Java Projects

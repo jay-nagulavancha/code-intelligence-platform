@@ -4,13 +4,13 @@ AI-powered, multi-agent code analysis platform with LLM orchestration, RAG integ
 
 ## 🚀 Features
 
-### Multi-Agent System
+### Orchestrator + Analyzer System
 - **Orchestrator Agent**: LLM-powered intelligent agent selection and coordination
-- **Security Agent**: Multi-language vulnerability scanning (Python: Bandit, Java: SpotBugs) with **auto-build**
-- **OSS Agent**: Multi-language dependency scanning (Python: pip-licenses, Java: OWASP Dependency-Check) with **auto-build**
-- **Change Agent**: Git diff analysis for code changes
-- **Deprecation Agent**: AST-based deprecated code detection
-- **GitHub Agent**: MCP-based GitHub repository interactions
+- **Security Analyzer**: Multi-language vulnerability scanning (Python: Bandit, Java: SpotBugs) with **auto-build**
+- **OSS Analyzer**: Multi-language dependency scanning (Python: pip-licenses, Java: OWASP Dependency-Check) with **auto-build**
+- **Change Analyzer**: Git diff analysis for code changes
+- **Deprecation Analyzer**: AST-based deprecated code detection
+- **GitHub Analyzer**: MCP-based GitHub repository interactions
 
 ### Auto-Build for Java Projects
 - **ProjectBuilder**: Automatically detects and builds Maven/Gradle projects before scanning
@@ -142,7 +142,7 @@ This will:
 1. Fetch repository metadata from GitHub API
 2. Clone the repo (shallow `--depth 1`)
 3. Detect language (Java) → auto-detect Java 17 from `pom.xml` → build with Maven
-4. Run SecurityAgent (SpotBugs) and OSSAgent (OWASP Dependency-Check)
+4. Run SecurityAnalyzer (SpotBugs) and OSSAnalyzer (OWASP Dependency-Check)
 5. Enhance report with LLM fix suggestions (if Ollama is running)
 6. Store results in RAG (FAISS) for historical context
 7. Create a GitHub Issue for critical/high findings
@@ -155,7 +155,7 @@ The platform uses a multi-agent architecture with LLM orchestration:
 1. **API Layer** - FastAPI endpoints for scan and GitHub operations
 2. **ScanService** - Main orchestration service
 3. **Orchestrator Agent** - LLM-powered agent selection
-4. **Specialized Agents** - Security, OSS, Change, Deprecation, GitHub
+4. **Specialized Analyzers** - Security, OSS, Change, Deprecation, GitHub
 5. **LLM Service** - Report generation and recommendations
 6. **RAG Service** - Historical context and pattern matching
 
@@ -257,7 +257,7 @@ Returns status of all services:
 ```
 backend/
 ├── app/
-│   ├── agents/              # Agent implementations
+│   ├── agents/              # Analyzer implementations (+ orchestrator agent)
 │   │   ├── orchestrator_agent.py   # LLM-powered agent selection
 │   │   ├── security_agent.py       # SAST (Bandit + SpotBugs, auto-build)
 │   │   ├── oss_agent.py            # SCA (pip-licenses + OWASP Dep-Check, auto-build)

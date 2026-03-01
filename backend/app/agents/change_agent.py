@@ -1,12 +1,12 @@
 """
-Change Agent - Analyzes code changes using git diff.
+Change Analyzer - Analyzes code changes using git diff.
 """
 import subprocess
 import json
 from typing import List, Dict, Optional
 
 
-class ChangeAgent:
+class ChangeAnalyzer:
     """Analyzes code changes using git diff."""
 
     def run(
@@ -133,4 +133,5 @@ class ChangeAgent:
         except FileNotFoundError:
             raise RuntimeError("Git is not installed or repository is not a git repo")
         except Exception as e:
-            raise RuntimeError(f"ChangeAgent failed: {str(e)}")
+            raise RuntimeError(f"ChangeAnalyzer failed: {str(e)}")
+

@@ -1,5 +1,5 @@
 """
-Deprecation Agent - Detects deprecated code patterns using AST rules.
+Deprecation Analyzer - Detects deprecated code patterns using AST rules.
 """
 import ast
 import os
@@ -7,7 +7,7 @@ from typing import List, Dict
 from pathlib import Path
 
 
-class DeprecationAgent:
+class DeprecationAnalyzer:
     """Detects deprecated code patterns using AST analysis."""
 
     def __init__(self):
@@ -102,3 +102,4 @@ class DeprecationAgent:
             issues.extend(file_issues)
 
         return issues
+

@@ -1,6 +1,6 @@
 # Java Security Scanning Setup
 
-The Security Agent now supports both Python and Java projects. For Java projects, it uses **SpotBugs** for security vulnerability scanning.
+The Security Analyzer now supports both Python and Java projects. For Java projects, it uses **SpotBugs** for security vulnerability scanning.
 
 ## Supported Languages
 
@@ -47,7 +47,7 @@ SpotBugs version 4.8.3
 
 ## How It Works
 
-1. **Language Detection**: The Security Agent automatically detects the project language using `ProjectDetector`, which looks for:
+1. **Language Detection**: The Security Analyzer automatically detects the project language using `ProjectDetector`, which looks for:
    - `pom.xml` or `build.gradle` / `build.gradle.kts` for Java
    - `requirements.txt` or `.py` files for Python
    - Other language indicators
@@ -98,12 +98,12 @@ mvn package
 
 ## Usage
 
-The Security Agent automatically detects the language:
+The Security Analyzer automatically detects the language:
 
 ```python
-from app.agents.security_agent import SecurityAgent
+from app.agents.security_agent import SecurityAnalyzer
 
-agent = SecurityAgent()
+agent = SecurityAnalyzer()
 
 # Auto-detects language
 issues = agent.run("/path/to/java/project")
@@ -179,7 +179,7 @@ brew install --cask temurin@17
 To add support for more languages:
 
 1. Add language detection in `project_detector.py`
-2. Add a `_scan_<language>()` method in `SecurityAgent`
+2. Add a `_scan_<language>()` method in `SecurityAnalyzer`
 3. Update the `run()` method to handle the new language
 
 Example languages to add:

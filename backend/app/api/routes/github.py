@@ -4,11 +4,11 @@ GitHub API routes - Handles GitHub repository interactions via MCP.
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from app.agents.github_agent import GitHubAgent
+from app.agents.github_agent import GitHubAnalyzer
 from app.services.mcp_github_service import MCPGitHubService
 
 router = APIRouter()
-github_agent = GitHubAgent()
+github_analyzer = GitHubAnalyzer()
 
 
 class GitHubRepositoryRequest(BaseModel):
@@ -46,8 +46,8 @@ class MCPToolRequest(BaseModel):
 def get_github_tools():
     """Get list of available MCP GitHub tools."""
     return {
-        "tools": github_agent.get_tools(),
-        "available": github_agent.is_available()
+        "tools": github_analyzer.get_tools(),
+        "available": github_analyzer.is_available()
     }
 
 
@@ -58,7 +58,7 @@ def analyze_repository(request: GitHubRepositoryRequest):
     Returns repository information, files, issues, and commits.
     """
     try:
-        result = github_agent.analyze_repository(
+        result = github_analyzer.analyze_repository(
             owner=request.owner,
             repo=request.repo,
             include_files=request.include_files,
@@ -77,7 +77,7 @@ def scan_github_repository(request: GitHubScanRequest):
     Fetches repository data that can be used for scanning without cloning.
     """
     try:
-        result = github_agent.scan_repository_for_scanning(
+        result = github_analyzer.scan_repository_for_scanning(
             owner=request.owner,
             repo=request.repo,
             scan_types=request.scan_types

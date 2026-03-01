@@ -57,7 +57,7 @@ The GitHub MCP service provides the following tools:
 - Can filter by state
 - Can limit number of PRs
 
-### 4. GitHub Agent Tests
+### 4. GitHub Analyzer Tests
 
 #### ✅ Repository Analysis
 - Successfully analyzed repository

@@ -1,5 +1,5 @@
 """
-OSS Agent - Multi-language open source dependency scanning.
+OSS Analyzer - Multi-language open source dependency scanning.
 Supports Python (pip-licenses) and Java (OWASP Dependency-Check).
 Scans dependencies for licenses and known vulnerabilities.
 Automatically builds Java projects before scanning.
@@ -13,7 +13,7 @@ from app.utils.project_detector import ProjectDetector
 from app.utils.project_builder import ProjectBuilder
 
 
-class OSSAgent:
+class OSSAnalyzer:
     """
     Multi-language OSS dependency scanner.
     Scans dependencies for licenses and known vulnerabilities.
