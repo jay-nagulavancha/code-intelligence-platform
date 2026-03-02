@@ -5,6 +5,7 @@ from .oss_agent import OSSAnalyzer
 from .change_agent import ChangeAnalyzer
 from .deprecation_agent import DeprecationAnalyzer
 from .github_agent import GitHubAnalyzer
+from .pr_agent import PRAgent
 
 __all__ = [
     "OrchestratorAgent",
@@ -13,4 +14,5 @@ __all__ = [
     "ChangeAnalyzer",
     "DeprecationAnalyzer",
     "GitHubAnalyzer",
+    "PRAgent",
 ]

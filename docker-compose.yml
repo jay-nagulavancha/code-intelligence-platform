@@ -42,6 +42,10 @@ services:
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
       - LLM_TIMEOUT=${LLM_TIMEOUT:-120}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-code-intelligence-platform}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
       # OpenAI (uncomment for production)
       # - LLM_PROVIDER=openai
       # - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -93,6 +97,10 @@ services:
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-8192}
       - LLM_MAX_TOKENS=${LLM_MAX_TOKENS:-1024}
       - LLM_TIMEOUT=${LLM_TIMEOUT:-120}
+      - LANGSMITH_TRACING=${LANGSMITH_TRACING:-false}
+      - LANGSMITH_API_KEY=${LANGSMITH_API_KEY}
+      - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-code-intelligence-platform}
+      - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - VECTOR_DB_TYPE=${VECTOR_DB_TYPE:-faiss}
       - VECTOR_DB_DIR=/app/.vector_db

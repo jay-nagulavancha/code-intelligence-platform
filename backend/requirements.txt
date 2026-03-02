@@ -10,6 +10,10 @@ pydantic>=2.5.0
 # --- HTTP & Utilities ---
 requests>=2.31.0
 python-dotenv>=1.0.0
+langsmith>=0.1.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-openai>=0.2.0
 
 # --- Security Scanning (Python) ---
 bandit>=1.7.0

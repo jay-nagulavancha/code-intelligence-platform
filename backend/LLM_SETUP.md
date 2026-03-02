@@ -1,6 +1,7 @@
 # LLM Setup Guide
 
 This project supports multiple LLM providers. By default, it uses **Ollama** (open-source) for development.
+It can also trace scan/LLM runs to **LangSmith** for observability.
 
 ## Quick Start with Ollama (Recommended for Development)
 
@@ -50,26 +51,41 @@ Create a `.env` file in the backend directory:
 ```bash
 # Use Ollama (default)
 LLM_PROVIDER=ollama
-OLLAMA_MODEL=llama3.2:3b
+OLLAMA_MODEL=llama3.2:1b
 OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_NUM_CTX=8192
+LLM_MAX_TOKENS=1024
+LLM_TIMEOUT=120
 ```
 
 The service will work with these defaults even without a `.env` file.
+
+## Using Groq (Fast Cloud, Recommended for Demo)
+
+1. Create a free API key at [https://console.groq.com](https://console.groq.com)
+
+2. Set environment variables:
+```bash
+LLM_PROVIDER=groq
+GROQ_API_KEY=your_groq_key_here
+GROQ_MODEL=llama-3.1-8b-instant
+LLM_MAX_TOKENS=1024
+LLM_TIMEOUT=30
+# Optional: route Groq/OpenAI calls through LangChain
+LLM_USE_LANGCHAIN=true
+```
 
 ## Using OpenAI (Production)
 
 If you want to use OpenAI for production:
 
-1. Install the OpenAI package:
-```bash
-pip install openai
-```
-
-2. Set environment variables:
+Set environment variables:
 ```bash
 LLM_PROVIDER=openai
 OPENAI_API_KEY=your_api_key_here
 OPENAI_MODEL=gpt-4o-mini
+OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_USE_LANGCHAIN=true
 ```
 
 ## Using Hugging Face (Optional)
@@ -104,10 +120,49 @@ print(f"Provider: {llm.provider}")
 print(f"Model: {llm.model}")
 ```
 
+## LangSmith Tracing (Optional)
+
+Enable LangSmith to trace end-to-end scan runs and LLM calls:
+
+```bash
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_pt_your_key_here
+LANGSMITH_PROJECT=code-intelligence-platform
+# LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+```
+
+What gets traced:
+- `scan.scan_github_repo` (full GitHub scan pipeline)
+- `scan.run_scan` (local pipeline orchestration)
+- `llm.generate` (provider/model call metadata)
+
+You can verify in health endpoint:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Look for `langsmith_enabled: true`.
+
+## LangChain Integration (Optional)
+
+LangChain is integrated as an optional execution path for OpenAI-compatible providers (OpenAI/Groq).
+
+Enable with:
+
+```bash
+LLM_USE_LANGCHAIN=true
+```
+
+Notes:
+- If LangChain path fails at runtime, the service automatically falls back to direct HTTP calls.
+- This keeps behavior stable while enabling LangChain-based model wrappers.
+
 ## Model Recommendations
 
 ### For Development (Ollama):
-- **llama3.2:3b** - Fast, small, good for testing
+- **llama3.2:1b** - Fastest on CPU, best for local scans
+- **llama3.2:3b** - Better quality if your machine can handle it
 - **llama3.2** - Better quality, still fast
 - **mistral** - Good balance
 - **codellama** - Specialized for code

@@ -2,7 +2,7 @@
 Full-pipeline GitHub repository scanner.
 
 Usage:
-    python scan_github_repo.py <owner> <repo> [--no-issues] [--no-rag]
+    python scan_github_repo.py <owner> <repo> [--no-issues] [--no-rag] [--create-pr]
 
 Example:
     python scan_github_repo.py jay-nagulavancha spring-boot-spring-security-jwt-authentication
@@ -50,12 +50,13 @@ def on_progress(step: int, message: str):
 
 def print_service_status(llm: LLMService, rag, github: MCPGitHubService):
     print(f"\n  Service status:")
+    cfg = llm.get_config()
     if llm.is_available():
-        cfg = llm.get_config()
         llm_status = f"✅ {llm.provider}/{llm.model} (ctx={cfg.get('num_ctx','?')}, max_tok={cfg['max_tokens']}, timeout={cfg['timeout']}s)"
     else:
         llm_status = "⚠️  unavailable (reports will use fallback)"
     print(f"    LLM     : {llm_status}")
+    print(f"    Trace   : {'✅ LangSmith' if cfg.get('langsmith_enabled') else '⏭️  disabled'}")
     if rag is None:
         print(f"    RAG     : ⏭️  skipped (--no-rag)")
     else:
@@ -202,6 +203,37 @@ def print_scan_results(result: dict):
             print(f"    ✅ #{gi.get('number')}: {gi.get('title', '')}")
             print(f"       {gi.get('url', '')}")
 
+    # --- Remediation PR created ---
+    remediation_pr = result.get("remediation_pr", {})
+    remediation_by_analyzer = result.get("remediation_by_analyzer", [])
+    if remediation_by_analyzer:
+        print(f"\n  {'─' * 40}")
+        print(f"  ANALYZER REMEDIATION ENGAGEMENT")
+        print(f"  {'─' * 40}")
+        for item in remediation_by_analyzer:
+            analyzer = item.get("analyzer", "unknown")
+            engaged = item.get("engaged", False)
+            issues_seen = item.get("issues_seen", 0)
+            mode = item.get("mode", "n/a")
+            if engaged:
+                print(f"    ✅ {analyzer}: engaged (issues={issues_seen}, mode={mode})")
+            else:
+                print(f"    ❌ {analyzer}: failed ({item.get('reason', 'unknown')})")
+
+    if remediation_pr:
+        print(f"\n  {'─' * 40}")
+        print(f"  REMEDIATION PR")
+        print(f"  {'─' * 40}")
+        if remediation_pr.get("created"):
+            pr = remediation_pr.get("pull_request", {})
+            print(f"    ✅ PR #{pr.get('number')}: {pr.get('title', '')}")
+            print(f"       {pr.get('url', '')}")
+            changed = remediation_pr.get("changed_files", [])
+            if changed:
+                print(f"    Files changed: {len(changed)}")
+        else:
+            print(f"    ⏭️  No PR created ({remediation_pr.get('reason', 'unknown')})")
+
 
 def save_results(owner: str, repo: str, result: dict):
     """Save the full result to JSON."""
@@ -245,6 +277,16 @@ def main():
         "--scan-types", nargs="+", default=["security", "oss"],
         help="Scan types to run (default: security oss)"
     )
+    parser.add_argument(
+        "--create-pr", action="store_true",
+        help="Apply safe auto-fixes and open a remediation pull request"
+    )
+    parser.add_argument(
+        "--remediation-mode",
+        choices=["deterministic", "nondeterministic"],
+        default=None,
+        help="Remediation strategy for PR agent (default: REMEDIATION_MODE env or deterministic)",
+    )
     args = parser.parse_args()
 
     print_header(args.owner, args.repo)
@@ -286,6 +328,8 @@ def main():
             repo=args.repo,
             scan_types=args.scan_types,
             create_issues=not args.no_issues,
+            create_pr=args.create_pr,
+            remediation_mode=args.remediation_mode,
             store_in_rag=not args.no_rag,
             use_llm=use_llm,
             on_progress=on_progress,

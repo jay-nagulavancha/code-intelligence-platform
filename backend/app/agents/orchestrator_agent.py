@@ -3,7 +3,7 @@ Orchestrator Agent - LLM-powered agent that decides which agents to call
 and combines their outputs into coherent reports.
 Gracefully falls back when LLM is unavailable or slow.
 """
-from typing import List, Dict, Optional, Any
+from typing import List, Dict, Optional, Any, Callable
 import json
 from app.agents.security_agent import SecurityAnalyzer
 from app.agents.oss_agent import OSSAnalyzer
@@ -49,6 +49,7 @@ class OrchestratorAgent:
         self,
         repo_path: str,
         agents_to_run: List[str],
+        on_agent_completed: Optional[Callable[[str, List[Dict]], None]] = None,
     ) -> Dict[str, List[Dict]]:
         """Execute the specified agents and collect their outputs."""
         results = {}
@@ -63,9 +64,13 @@ class OrchestratorAgent:
                     results["change"] = self.change_analyzer.run(repo_path)
                 elif agent_name == "deprecation":
                     results["deprecation"] = self.deprecation_analyzer.run(repo_path)
+                if on_agent_completed is not None:
+                    on_agent_completed(agent_name, results.get(agent_name, []))
             except Exception as e:
                 results[agent_name] = []
                 print(f"{agent_name.title()}Analyzer failed: {e}")
+                if on_agent_completed is not None:
+                    on_agent_completed(agent_name, [])
 
         return results
 
@@ -166,6 +171,7 @@ Respond with valid JSON containing:
         scan_types: List[str],
         project_context: Optional[Dict[str, Any]] = None,
         use_llm: bool = True,
+        on_agent_completed: Optional[Callable[[str, List[Dict]], None]] = None,
     ) -> Dict[str, Any]:
         """
         Main orchestration:
@@ -177,7 +183,11 @@ Respond with valid JSON containing:
             project_context = {}
 
         agents_to_run = self.decide_agents(scan_types, project_context)
-        agent_results = self.run_agents(repo_path, agents_to_run)
+        agent_results = self.run_agents(
+            repo_path=repo_path,
+            agents_to_run=agents_to_run,
+            on_agent_completed=on_agent_completed,
+        )
 
         if use_llm:
             report = self.combine_outputs(agent_results, project_context)

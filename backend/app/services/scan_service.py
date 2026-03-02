@@ -7,6 +7,7 @@ Scan Service - Orchestrates the full scan pipeline:
   5. GitHub issue creation for critical/high findings
 """
 import os
+import json
 import uuid
 import tempfile
 import shutil
@@ -16,9 +17,11 @@ from datetime import datetime
 
 from app.agents.orchestrator_agent import OrchestratorAgent
 from app.agents.github_agent import GitHubAnalyzer
+from app.agents.pr_agent import PRAgent
 from app.services.llm_service import LLMService
 from app.services.rag_service import RAGService
 from app.services.mcp_github_service import MCPGitHubService
+from app.services.langsmith_service import LangSmithTracer
 from app.utils.project_detector import ProjectDetector
 from app.utils.project_builder import ProjectBuilder
 
@@ -38,7 +41,9 @@ class ScanService:
         self.llm_service = llm_service or LLMService()
         self.rag_service = rag_service  # Can be None (--no-rag)
         self.github_service = github_service or MCPGitHubService()
+        self.tracer = getattr(self.llm_service, "tracer", LangSmithTracer())
         self.github_analyzer = GitHubAnalyzer(self.github_service)
+        self.pr_agent = PRAgent(self.github_service, self.llm_service)
         self.orchestrator = OrchestratorAgent(llm_service=self.llm_service)
         self.detector = ProjectDetector()
         self.builder = ProjectBuilder()
@@ -54,6 +59,8 @@ class ScanService:
         project_context: Optional[Dict[str, Any]] = None,
         store_in_rag: bool = True,
         use_llm: bool = True,
+        create_pr: bool = False,
+        remediation_mode: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Run a comprehensive scan on a local repository path.
@@ -74,33 +81,71 @@ class ScanService:
         project_context["scan_id"] = scan_id
         project_context["scan_time"] = datetime.utcnow().isoformat()
 
-        # --- Step 1: RAG historical context ---
-        historical_context = self._query_rag(project_context)
-        if historical_context:
-            project_context["historical_context"] = historical_context
+        with self.tracer.trace(
+            name="scan.run_scan",
+            inputs={
+                "scan_id": scan_id,
+                "repo_path": repo_path,
+                "scan_types": scan_types,
+                "store_in_rag": store_in_rag,
+                "use_llm": use_llm,
+            },
+            metadata={"component": "ScanService"},
+            tags=["scan", "local"],
+        ):
+            # --- Step 1: RAG historical context ---
+            historical_context = self._query_rag(project_context)
+            if historical_context:
+                project_context["historical_context"] = historical_context
 
-        # --- Step 2: Orchestrate agents ---
-        result = self.orchestrator.orchestrate(
-            repo_path=repo_path,
-            scan_types=scan_types,
-            project_context=project_context,
-            use_llm=use_llm,
-        )
+            # --- Step 2: Orchestrate agents ---
+            remediation_by_analyzer: List[Dict[str, Any]] = []
 
-        # --- Step 3: LLM enhancement (optional) ---
-        if use_llm:
-            enhanced_result = self._enhance_with_llm(result, project_context)
-        else:
-            result.setdefault("llm_enhanced", False)
-            enhanced_result = result
+            def _on_agent_completed(agent_name: str, issues: List[Dict]):
+                if not create_pr:
+                    return
+                try:
+                    remediation_by_analyzer.append(
+                        self.pr_agent.engage_after_analyzer(
+                            repo_path=repo_path,
+                            analyzer_name=agent_name,
+                            analyzer_issues=issues,
+                            remediation_mode=remediation_mode,
+                        )
+                    )
+                except Exception as e:
+                    remediation_by_analyzer.append(
+                        {
+                            "analyzer": agent_name,
+                            "engaged": False,
+                            "reason": str(e),
+                        }
+                    )
 
-        # --- Step 4: Store in RAG ---
-        if store_in_rag:
-            self._store_in_rag(scan_id, enhanced_result, project_context)
+            result = self.orchestrator.orchestrate(
+                repo_path=repo_path,
+                scan_types=scan_types,
+                project_context=project_context,
+                use_llm=use_llm,
+                on_agent_completed=_on_agent_completed,
+            )
+            if remediation_by_analyzer:
+                result["remediation_by_analyzer"] = remediation_by_analyzer
 
-        enhanced_result["scan_id"] = scan_id
-        enhanced_result["historical_context"] = historical_context
-        return enhanced_result
+            # --- Step 3: LLM enhancement (optional) ---
+            if use_llm:
+                enhanced_result = self._enhance_with_llm(result, project_context)
+            else:
+                result.setdefault("llm_enhanced", False)
+                enhanced_result = result
+
+            # --- Step 4: Store in RAG ---
+            if store_in_rag:
+                self._store_in_rag(scan_id, enhanced_result, project_context)
+
+            enhanced_result["scan_id"] = scan_id
+            enhanced_result["historical_context"] = historical_context
+            return enhanced_result
 
     def scan_github_repo(
         self,
@@ -108,6 +153,8 @@ class ScanService:
         repo: str,
         scan_types: Optional[List[str]] = None,
         create_issues: bool = True,
+        create_pr: bool = False,
+        remediation_mode: Optional[str] = None,
         store_in_rag: bool = True,
         use_llm: bool = True,
         on_progress: Optional[callable] = None,
@@ -141,65 +188,97 @@ class ScanService:
             if on_progress:
                 on_progress(step, msg)
 
-        # --- Step 1: Fetch repo info ---
-        progress(1, "Fetching repository information...")
-        repo_info = self._fetch_repo_info(owner, repo)
-
-        # --- Step 2: Clone ---
-        progress(2, "Cloning repository...")
-        temp_dir = self._clone_repository(owner, repo)
-
-        try:
-            # --- Step 3: Detect language & build ---
-            progress(3, "Detecting language and building project...")
-            language = self.detector.get_primary_language(temp_dir)
-            build_result = None
-            if language == "java":
-                build_result = self.builder.build(temp_dir)
-
-            project_context = {
-                "name": repo,
+        with self.tracer.trace(
+            name="scan.scan_github_repo",
+            inputs={
                 "owner": owner,
-                "full_name": f"{owner}/{repo}",
-                "language": language,
-                "github_url": f"https://github.com/{owner}/{repo}",
-                "description": repo_info.get("description"),
-                "default_branch": repo_info.get("default_branch", "main"),
-                "build_result": build_result,
-            }
+                "repo": repo,
+                "scan_types": scan_types,
+                "create_issues": create_issues,
+                "create_pr": create_pr,
+                "remediation_mode": remediation_mode,
+                "store_in_rag": store_in_rag,
+                "use_llm": use_llm,
+            },
+            metadata={"component": "ScanService"},
+            tags=["scan", "github"],
+        ):
+            # --- Step 1: Fetch repo info ---
+            progress(1, "Fetching repository information...")
+            repo_info = self._fetch_repo_info(owner, repo)
 
-            # --- Step 4: Full scan pipeline ---
-            llm_label = " + LLM" if use_llm else ""
-            rag_label = " + RAG" if store_in_rag else ""
-            progress(4, f"Running scan pipeline (agents{llm_label}{rag_label})...")
-            result = self.run_scan(
-                repo_path=temp_dir,
-                scan_types=scan_types,
-                project_context=project_context,
-                store_in_rag=store_in_rag,
-                use_llm=use_llm,
-            )
+            # --- Step 2: Clone ---
+            progress(2, "Cloning repository...")
+            temp_dir = self._clone_repository(owner, repo)
 
-            result["repository"] = f"{owner}/{repo}"
-            result["language"] = language
-            result["build_result"] = build_result
-            result["repo_info"] = repo_info
+            try:
+                # --- Step 3: Detect language & build ---
+                progress(3, "Detecting language and building project...")
+                language = self.detector.get_primary_language(temp_dir)
+                build_result = None
+                if language == "java":
+                    build_result = self.builder.build(temp_dir)
 
-            # --- Step 5: Create GitHub Issues ---
-            if create_issues:
-                progress(5, "Creating GitHub issues for critical/high findings...")
-                created_issues = self._create_github_issues(owner, repo, result)
-                result["github_issues_created"] = created_issues
-            else:
-                progress(5, "Skipping GitHub issue creation (--no-issues)")
+                project_context = {
+                    "name": repo,
+                    "owner": owner,
+                    "full_name": f"{owner}/{repo}",
+                    "language": language,
+                    "github_url": f"https://github.com/{owner}/{repo}",
+                    "description": repo_info.get("description"),
+                    "default_branch": repo_info.get("default_branch", "main"),
+                    "build_result": build_result,
+                }
 
-            return result
+                # --- Step 4: Full scan pipeline ---
+                llm_label = " + LLM" if use_llm else ""
+                rag_label = " + RAG" if store_in_rag else ""
+                progress(4, f"Running scan pipeline (agents{llm_label}{rag_label})...")
+                result = self.run_scan(
+                    repo_path=temp_dir,
+                    scan_types=scan_types,
+                    project_context=project_context,
+                    store_in_rag=store_in_rag,
+                    use_llm=use_llm,
+                    create_pr=create_pr,
+                    remediation_mode=remediation_mode,
+                )
 
-        finally:
-            # --- Step 6: Cleanup ---
-            progress(6, "Cleaning up temporary files...")
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                result["repository"] = f"{owner}/{repo}"
+                result["language"] = language
+                result["build_result"] = build_result
+                result["repo_info"] = repo_info
+
+                # --- Step 5: Create GitHub Issues ---
+                if create_issues:
+                    progress(5, "Creating GitHub issues for critical/high findings...")
+                    created_issues = self._create_github_issues(owner, repo, result)
+                    result["github_issues_created"] = created_issues
+                else:
+                    progress(5, "Skipping GitHub issue creation (--no-issues)")
+
+                # --- Step 6: Auto-fix PR creation ---
+                if create_pr:
+                    progress(6, "Applying safe auto-fixes and creating pull request...")
+                    pr_result = self.pr_agent.create_fix_pr(
+                        repo_path=temp_dir,
+                        owner=owner,
+                        repo=repo,
+                        scan_result=result,
+                        base_branch=project_context.get("default_branch", "main"),
+                        remediation_mode=remediation_mode,
+                    )
+                    result["remediation_pr"] = pr_result
+                else:
+                    progress(6, "Skipping remediation PR creation (--no-pr)")
+
+                return result
+
+            finally:
+                # --- Step 7: Cleanup ---
+                progress(7, "Cleaning up temporary files...")
+                if temp_dir and os.path.exists(temp_dir):
+                    shutil.rmtree(temp_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -466,7 +545,10 @@ class ScanService:
                 lines.append(f"**{i}. {explanation}**")
                 if fix:
                     lines.append(f"```")
-                    lines.append(fix)
+                    if isinstance(fix, (dict, list)):
+                        lines.append(json.dumps(fix, indent=2, default=str))
+                    else:
+                        lines.append(str(fix))
                     lines.append(f"```")
                 lines.append("")
 

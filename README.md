@@ -19,10 +19,11 @@ AI-powered, multi-agent code analysis platform with LLM orchestration, RAG integ
 - **Wrapper Support**: Prefers `mvnw`/`gradlew` wrappers when available
 
 ### LLM Integration
-- **Multiple Providers**: Ollama (default), OpenAI, Hugging Face
+- **Multiple Providers**: Ollama (default), Groq, OpenAI, Hugging Face
 - **Intelligent Orchestration**: LLM decides which agents to run
 - **Report Generation**: Human-readable release notes, fix suggestions, summaries
 - **Context-Aware**: Uses project context for better decisions
+- **Observability**: Optional LangSmith tracing for scan and LLM runs
 
 ### RAG (Retrieval Augmented Generation)
 - **Historical Context**: Stores and retrieves past scan results
@@ -67,7 +68,8 @@ pip install -r requirements.txt
 # Set environment variables
 export GITHUB_TOKEN=your_github_token  # Optional, for GitHub features
 export LLM_PROVIDER=ollama  # Optional, defaults to ollama
-export OLLAMA_MODEL=llama3.2:3b  # Optional
+export OLLAMA_MODEL=llama3.2:1b  # Optional
+export LANGSMITH_TRACING=false   # Optional
 
 # Run the server
 uvicorn app.main:app --reload
@@ -175,11 +177,22 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 
 ```bash
 # LLM Configuration
-LLM_PROVIDER=ollama  # ollama, openai, huggingface
-OLLAMA_MODEL=llama3.2:3b
+LLM_PROVIDER=ollama  # ollama, groq, openai, huggingface
+OLLAMA_MODEL=llama3.2:1b
 OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_NUM_CTX=8192
+LLM_MAX_TOKENS=1024
+LLM_TIMEOUT=120
+LLM_USE_LANGCHAIN=false
+GROQ_API_KEY=your_key  # For Groq
+GROQ_MODEL=llama-3.1-8b-instant
 OPENAI_API_KEY=your_key  # For OpenAI
 OPENAI_MODEL=gpt-4o-mini
+
+# LangSmith (optional observability)
+LANGSMITH_TRACING=false
+LANGSMITH_API_KEY=lsv2_pt_your_key
+LANGSMITH_PROJECT=code-intelligence-platform
 
 # GitHub Integration
 GITHUB_TOKEN=your_github_token

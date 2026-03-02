@@ -153,13 +153,14 @@
   - Fetch code for analysis
 
 ### 6. LLM Service
-- **Providers**: Ollama (default for dev), OpenAI (for prod), Hugging Face
+- **Providers**: Ollama (default for dev), Groq (fast cloud), OpenAI, Hugging Face
 - **Functions**:
   - Generate human-readable release notes from change analysis
   - Suggest fixes for security vulnerabilities (per-issue recommendations)
   - Summarize deprecation issues with migration paths
   - Combine agent outputs into comprehensive reports with recommendations
   - Graceful fallback when LLM is unavailable (raw structured data returned)
+  - Optional LangSmith tracing for LLM calls (`llm.generate`)
 
 ### 7. ProjectBuilder (Auto-Build)
 - **Purpose**: Automatically build Java projects before scanning
@@ -207,7 +208,8 @@
 
 - **API**: FastAPI
 - **CLI**: `scan_github_repo.py` (argparse)
-- **LLM**: Ollama (dev) / OpenAI (prod) / Hugging Face
+- **LLM**: Ollama (dev) / Groq (fast cloud) / OpenAI / Hugging Face
+- **Observability**: LangSmith (optional tracing)
 - **Vector DB**: FAISS (default) / Qdrant (scalable)
 - **Embeddings**: sentence-transformers (`all-MiniLM-L6-v2`)
 - **SAST**: Bandit (Python), SpotBugs (Java)

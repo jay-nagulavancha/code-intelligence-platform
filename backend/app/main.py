@@ -31,10 +31,12 @@ def detailed_health():
     from app.services.llm_service import LLMService
     from app.services.rag_service import RAGService
     from app.services.mcp_github_service import MCPGitHubService
+    from app.services.langsmith_service import LangSmithTracer
     
     llm_service = LLMService()
     rag_service = RAGService()
     github_service = MCPGitHubService()
+    langsmith = LangSmithTracer()
     
     return {
         'status': 'ok',
@@ -43,5 +45,7 @@ def detailed_health():
         'llm_model': llm_service.model,
         'rag_available': rag_service.is_available(),
         'vector_db_type': rag_service.vector_db_type,
-        'github_available': github_service.is_available()
+        'github_available': github_service.is_available(),
+        'langsmith_enabled': langsmith.is_enabled(),
+        'langsmith_project': langsmith.get_status().get("project")
     }

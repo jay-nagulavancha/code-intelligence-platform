@@ -13,6 +13,7 @@ import json
 import requests
 from typing import Optional, Dict, Any, List
 from enum import Enum
+from app.services.langsmith_service import LangSmithTracer
 
 
 class LLMProvider(str, Enum):
@@ -56,10 +57,16 @@ class LLMService:
         model: Optional[str] = None,
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
+        tracer: Optional[LangSmithTracer] = None,
     ):
         # Global settings
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1024"))
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))
+        # Optional LangChain path (mainly for OpenAI-compatible providers)
+        self.use_langchain = os.getenv("LLM_USE_LANGCHAIN", "false").lower() in (
+            "1", "true", "yes", "on"
+        )
+        self.tracer = tracer or LangSmithTracer()
 
         self.provider = provider or os.getenv("LLM_PROVIDER", LLMProvider.OLLAMA.value)
 
@@ -150,6 +157,8 @@ class LLMService:
             "available": self._available,
             "max_tokens": self.max_tokens,
             "timeout": self.timeout,
+            "use_langchain": self.use_langchain,
+            "langsmith_enabled": self.tracer.is_enabled(),
         }
         if self.provider == LLMProvider.OLLAMA.value:
             config["num_ctx"] = self.num_ctx
@@ -247,6 +256,53 @@ class LLMService:
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"{self.provider} API request failed: {str(e)}")
 
+    def _generate_openai_compat_langchain(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """
+        Generate text via LangChain ChatOpenAI for OpenAI-compatible providers.
+        Works well with Groq/OpenAI base URLs.
+        """
+        effective_max_tokens = max_tokens or self.max_tokens
+        try:
+            from langchain_openai import ChatOpenAI
+            from langchain_core.messages import SystemMessage, HumanMessage
+        except Exception as e:
+            raise RuntimeError(f"LangChain imports failed: {e}")
+
+        llm = ChatOpenAI(
+            model=self.model,
+            api_key=self.api_key,
+            base_url=self.base_url,
+            temperature=temperature,
+            max_tokens=effective_max_tokens,
+            timeout=self.timeout,
+        )
+
+        messages = []
+        if system_prompt:
+            messages.append(SystemMessage(content=system_prompt))
+        messages.append(HumanMessage(content=prompt))
+
+        response = llm.invoke(messages)
+        content = response.content
+        if isinstance(content, str):
+            return content.strip()
+        # LangChain may return list/blocks for some providers
+        if isinstance(content, list):
+            parts = []
+            for item in content:
+                if isinstance(item, dict):
+                    parts.append(str(item.get("text", item)))
+                else:
+                    parts.append(str(item))
+            return "\n".join(parts).strip()
+        return str(content).strip()
+
     def _generate_huggingface(
         self,
         prompt: str,
@@ -315,14 +371,35 @@ class LLMService:
                 f"Please check your configuration."
             )
 
-        if self.provider == LLMProvider.OLLAMA.value:
-            return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
-        elif self.provider in (LLMProvider.OPENAI.value, LLMProvider.GROQ.value):
-            return self._generate_openai_compat(prompt, system_prompt, temperature, max_tokens)
-        elif self.provider == LLMProvider.HUGGINGFACE.value:
-            return self._generate_huggingface(prompt, system_prompt, temperature, max_tokens)
-        else:
-            raise ValueError(f"Unsupported provider: {self.provider}")
+        with self.tracer.trace(
+            name="llm.generate",
+            inputs={
+                "provider": self.provider,
+                "model": self.model,
+                "prompt_chars": len(prompt),
+                "has_system_prompt": bool(system_prompt),
+                "temperature": temperature,
+                "max_tokens": max_tokens or self.max_tokens,
+            },
+            metadata={"component": "LLMService"},
+            tags=["llm", self.provider],
+        ):
+            if self.provider == LLMProvider.OLLAMA.value:
+                return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
+            elif self.provider in (LLMProvider.OPENAI.value, LLMProvider.GROQ.value):
+                if self.use_langchain:
+                    try:
+                        return self._generate_openai_compat_langchain(
+                            prompt, system_prompt, temperature, max_tokens
+                        )
+                    except Exception as e:
+                        # Fail open to existing stable path.
+                        print(f"LangChain path failed, falling back to direct HTTP: {e}")
+                return self._generate_openai_compat(prompt, system_prompt, temperature, max_tokens)
+            elif self.provider == LLMProvider.HUGGINGFACE.value:
+                return self._generate_huggingface(prompt, system_prompt, temperature, max_tokens)
+            else:
+                raise ValueError(f"Unsupported provider: {self.provider}")
 
     def generate_release_notes(
         self, 

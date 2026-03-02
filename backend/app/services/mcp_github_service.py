@@ -141,6 +141,22 @@ class MCPGitHubService:
                 }
             },
             {
+                "name": "github_create_pull_request",
+                "description": "Create a pull request in a GitHub repository",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string", "description": "Repository owner"},
+                        "repo": {"type": "string", "description": "Repository name"},
+                        "title": {"type": "string", "description": "PR title"},
+                        "body": {"type": "string", "description": "PR description/body"},
+                        "head": {"type": "string", "description": "Head branch name"},
+                        "base": {"type": "string", "description": "Base branch name"}
+                    },
+                    "required": ["owner", "repo", "title", "body", "head", "base"]
+                }
+            },
+            {
                 "name": "github_get_diff",
                 "description": "Get diff between two commits or branches",
                 "inputSchema": {
@@ -180,6 +196,7 @@ class MCPGitHubService:
             "github_get_issues": self.get_issues,
             "github_create_issue": self.create_issue,
             "github_get_pull_requests": self.get_pull_requests,
+            "github_create_pull_request": self.create_pull_request,
             "github_get_diff": self.get_diff
         }
 
@@ -354,6 +371,35 @@ class MCPGitHubService:
                 }
                 for pr in prs[:limit]
             ]
+        }
+
+    def create_pull_request(
+        self,
+        owner: str,
+        repo: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str,
+    ) -> Dict[str, Any]:
+        """Create a new pull request."""
+        url = f"{self.base_url}/repos/{owner}/{repo}/pulls"
+        payload = {
+            "title": title,
+            "body": body,
+            "head": head,
+            "base": base,
+        }
+        response = requests.post(url, headers=self.headers, json=payload)
+        response.raise_for_status()
+        pr = response.json()
+        return {
+            "number": pr["number"],
+            "title": pr["title"],
+            "state": pr["state"],
+            "url": pr["html_url"],
+            "head": pr["head"]["ref"],
+            "base": pr["base"]["ref"],
         }
 
     def get_diff(self, owner: str, repo: str, base: str, head: str) -> Dict[str, Any]:
