@@ -31,6 +31,10 @@ class PRAgent:
         self.default_mode = os.getenv("REMEDIATION_MODE", "deterministic").strip().lower()
         self.max_attempts = int(os.getenv("REMEDIATION_MAX_ATTEMPTS", "2"))
         self.max_files = int(os.getenv("REMEDIATION_MAX_FILES", "3"))
+        self.generate_tests_enabled = os.getenv("REMEDIATION_GENERATE_TESTS", "true").lower() in (
+            "1", "true", "yes", "on"
+        )
+        self.max_test_attempts = int(os.getenv("REMEDIATION_TEST_MAX_ATTEMPTS", "2"))
         self.post_pr_review_enabled = os.getenv("POST_PR_REVIEW_ENABLED", "true").lower() in (
             "1", "true", "yes", "on"
         )
@@ -253,6 +257,250 @@ Preserve unrelated logic.
             "changed_files": changed_files,
             "details": details,
             "reason": None if changed_files else "no_valid_ai_fixes",
+        }
+
+    def _collect_issues_for_files(
+        self, repo_path: str, scan_result: Dict[str, Any], changed_files: List[str]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Build a file -> issues map for files that were actually changed by remediation.
+        """
+        changed_abs = {os.path.abspath(p): p for p in changed_files}
+        by_file: Dict[str, List[Dict[str, Any]]] = {}
+        raw_results = scan_result.get("raw_results", {})
+
+        for analyzer_name, issues in raw_results.items():
+            for issue in issues or []:
+                resolved = self._resolve_issue_file_path(repo_path, issue)
+                if not resolved:
+                    continue
+                resolved_abs = os.path.abspath(resolved)
+                if resolved_abs not in changed_abs:
+                    continue
+                by_file.setdefault(changed_abs[resolved_abs], []).append(
+                    {"analyzer": analyzer_name, **issue}
+                )
+        return by_file
+
+    def _infer_test_file_path(self, repo_path: str, source_file: str) -> Optional[str]:
+        """
+        Infer a test file path for a changed source file.
+        """
+        rel = os.path.relpath(source_file, repo_path)
+        ext = os.path.splitext(rel)[1].lower()
+
+        if ext == ".py":
+            directory = os.path.dirname(rel)
+            module_name = os.path.splitext(os.path.basename(rel))[0]
+            return os.path.join(repo_path, "tests", directory, f"test_{module_name}.py")
+
+        if ext == ".java" and "src/main/java/" in rel:
+            test_rel = rel.replace("src/main/java/", "src/test/java/", 1)
+            base, _ = os.path.splitext(test_rel)
+            return os.path.join(repo_path, f"{base}Test.java")
+
+        return None
+
+    def _generate_test_candidate(
+        self,
+        source_file: str,
+        source_content: str,
+        test_file: str,
+        existing_test_content: str,
+        issues: List[Dict[str, Any]],
+        attempt: int,
+    ) -> str:
+        compact_issues = issues[:5]
+        prompt = f"""You are generating unit tests for a remediated source file.
+
+Source file: {source_file}
+Test file: {test_file}
+Attempt: {attempt}
+
+Related issues (JSON):
+{json.dumps(compact_issues, indent=2, default=str)}
+
+Updated source content:
+```text
+{source_content}
+```
+
+Existing test content (may be empty):
+```text
+{existing_test_content}
+```
+
+Return ONLY the complete test file content.
+Do not include markdown fences or explanations.
+Generate practical unit tests that validate the remediation behavior and edge cases.
+"""
+        response = self.llm_service.generate(
+            prompt=prompt,
+            system_prompt=(
+                "You are a senior test engineer. "
+                "Return only valid test source code for the full file content."
+            ),
+            temperature=0.2,
+            max_tokens=2048,
+        )
+        return self._extract_code_block_or_text(response)
+
+    def _validate_test_candidate(
+        self, repo_path: str, test_file: str, candidate: str
+    ) -> Tuple[bool, str]:
+        if not candidate.strip():
+            return False, "empty_test_candidate"
+
+        ext = os.path.splitext(test_file)[1].lower()
+        try:
+            if ext == ".py":
+                ast.parse(candidate)
+            elif ext == ".java":
+                if candidate.count("{") != candidate.count("}"):
+                    return False, "java_test_brace_mismatch"
+        except Exception as e:
+            return False, f"test_syntax_validation_failed: {e}"
+
+        rel = os.path.relpath(test_file, repo_path)
+        diff = self._run_git(repo_path, ["diff", "--", rel])
+        if diff.returncode != 0:
+            return False, f"git_diff_failed: {diff.stderr}"
+        if not diff.stdout.strip():
+            return False, "no_effective_test_diff"
+        return True, "validated"
+
+    def _maybe_generate_tests_for_fixes(
+        self,
+        repo_path: str,
+        changed_files: List[str],
+        scan_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Generate/augment unit tests via LLM for changed source files.
+        """
+        if not self.generate_tests_enabled:
+            return {"generated_files": [], "details": [], "reason": "test_generation_disabled"}
+        if not self.llm_service.is_available():
+            return {"generated_files": [], "details": [], "reason": "llm_unavailable"}
+
+        issues_by_file = self._collect_issues_for_files(repo_path, scan_result, changed_files)
+        generated_files: List[str] = []
+        details: List[Dict[str, Any]] = []
+
+        for source_file in changed_files[: max(1, self.max_files)]:
+            test_file = self._infer_test_file_path(repo_path, source_file)
+            if not test_file:
+                details.append(
+                    {
+                        "source_file": os.path.relpath(source_file, repo_path),
+                        "status": "skipped",
+                        "reason": "unsupported_language_for_test_generation",
+                    }
+                )
+                continue
+
+            os.makedirs(os.path.dirname(test_file), exist_ok=True)
+
+            try:
+                with open(source_file, "r", encoding="utf-8") as f:
+                    source_content = f.read()
+            except Exception as e:
+                details.append(
+                    {
+                        "source_file": os.path.relpath(source_file, repo_path),
+                        "test_file": os.path.relpath(test_file, repo_path),
+                        "status": "failed",
+                        "reason": f"read_source_failed: {e}",
+                    }
+                )
+                continue
+
+            test_exists = os.path.exists(test_file)
+            original_test_content = ""
+            if test_exists:
+                try:
+                    with open(test_file, "r", encoding="utf-8") as f:
+                        original_test_content = f.read()
+                except Exception as e:
+                    details.append(
+                        {
+                            "source_file": os.path.relpath(source_file, repo_path),
+                            "test_file": os.path.relpath(test_file, repo_path),
+                            "status": "failed",
+                            "reason": f"read_test_failed: {e}",
+                        }
+                    )
+                    continue
+
+            applied = False
+            last_reason = "no_test_candidate"
+            for attempt in range(1, max(1, self.max_test_attempts) + 1):
+                try:
+                    candidate = self._generate_test_candidate(
+                        source_file=os.path.relpath(source_file, repo_path),
+                        source_content=source_content,
+                        test_file=os.path.relpath(test_file, repo_path),
+                        existing_test_content=original_test_content,
+                        issues=issues_by_file.get(source_file, []),
+                        attempt=attempt,
+                    )
+                except Exception as e:
+                    last_reason = f"test_generation_failed: {e}"
+                    continue
+
+                if not candidate or candidate.strip() == original_test_content.strip():
+                    last_reason = "unchanged_test_candidate"
+                    continue
+
+                try:
+                    with open(test_file, "w", encoding="utf-8") as f:
+                        f.write(candidate)
+                except Exception as e:
+                    last_reason = f"write_test_failed: {e}"
+                    continue
+
+                valid, reason = self._validate_test_candidate(repo_path, test_file, candidate)
+                if valid:
+                    generated_files.append(test_file)
+                    details.append(
+                        {
+                            "source_file": os.path.relpath(source_file, repo_path),
+                            "test_file": os.path.relpath(test_file, repo_path),
+                            "status": "applied",
+                            "attempt": attempt,
+                            "issues_considered": len(issues_by_file.get(source_file, [])),
+                        }
+                    )
+                    applied = True
+                    break
+
+                if test_exists:
+                    with open(test_file, "w", encoding="utf-8") as f:
+                        f.write(original_test_content)
+                elif os.path.exists(test_file):
+                    os.remove(test_file)
+                last_reason = reason
+
+            if not applied:
+                if test_exists:
+                    with open(test_file, "w", encoding="utf-8") as f:
+                        f.write(original_test_content)
+                elif os.path.exists(test_file):
+                    os.remove(test_file)
+                details.append(
+                    {
+                        "source_file": os.path.relpath(source_file, repo_path),
+                        "test_file": os.path.relpath(test_file, repo_path),
+                        "status": "failed",
+                        "reason": last_reason,
+                        "issues_considered": len(issues_by_file.get(source_file, [])),
+                    }
+                )
+
+        return {
+            "generated_files": generated_files,
+            "details": details,
+            "reason": None if generated_files else "no_valid_test_changes",
         }
 
     def _commit_push_and_create_pr(
@@ -727,11 +975,21 @@ Keep it concise and practical.
                     "details": ai_fix_result.get("details", []),
                 }
 
+            test_result = self._maybe_generate_tests_for_fixes(
+                repo_path=repo_path,
+                changed_files=changed_files,
+                scan_result=scan_result,
+            )
+            changed_files = changed_files + [
+                p for p in test_result.get("generated_files", []) if p not in changed_files
+            ]
+
             branch_name = f"cip/{title_prefix}-ai-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
             commit_msg = (
                 "fix: apply AI-assisted remediations from analyzer findings\n\n"
                 "- generate candidate patches per file\n"
                 "- validate syntax/structure before commit\n"
+                "- generate unit tests for changed files when feasible\n"
             )
             title = "fix: AI-assisted remediation for analyzer findings"
             body_lines = [
@@ -743,6 +1001,7 @@ Keep it concise and practical.
                 "- Candidate generated by LLM per file",
                 "- Syntax/structure validation per language",
                 "- Git diff required before acceptance",
+                "- Unit test generation attempted for changed files",
                 "",
                 "### Files changed",
             ]
@@ -764,7 +1023,10 @@ Keep it concise and practical.
                 body=body,
                 mode=mode,
                 scan_result=scan_result,
-                extra={"details": ai_fix_result.get("details", [])},
+                extra={
+                    "details": ai_fix_result.get("details", []),
+                    "test_generation": test_result,
+                },
             )
 
         by_file = self._collect_fixable_security_issues(repo_path, scan_result)
@@ -779,11 +1041,21 @@ Keep it concise and practical.
         if not changed_files:
             return {"created": False, "reason": "no_changes_applied", "mode": mode}
 
+        test_result = self._maybe_generate_tests_for_fixes(
+            repo_path=repo_path,
+            changed_files=changed_files,
+            scan_result=scan_result,
+        )
+        changed_files = changed_files + [
+            p for p in test_result.get("generated_files", []) if p not in changed_files
+        ]
+
         branch_name = f"cip/{title_prefix}-security-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
         commit_msg = (
             "fix: apply automated Java security remediations\n\n"
             "- add defensive copies for mutable collection accessors\n"
             "- add missing hashCode() where equals() is implemented\n"
+            "- add/update unit tests for remediated files when feasible\n"
         )
 
         title = "fix: automated remediation for security findings"
@@ -795,6 +1067,7 @@ Keep it concise and practical.
             "### What was changed",
             "- Added defensive copies for mutable collection getters/setters (SpotBugs EI_EXPOSE_REP/EI_EXPOSE_REP2).",
             "- Added `hashCode()` where `equals()` is implemented but missing hashCode (HE_EQUALS_USE_HASHCODE).",
+            "- Attempted LLM-generated unit tests for remediated source files.",
             "",
             "### Files changed",
         ]
@@ -817,5 +1090,6 @@ Keep it concise and practical.
             body=body,
             mode=mode,
             scan_result=scan_result,
+            extra={"test_generation": test_result},
         )
 
