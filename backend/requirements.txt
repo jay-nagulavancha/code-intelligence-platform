@@ -10,7 +10,7 @@ pydantic>=2.5.0
 # --- HTTP & Utilities ---
 requests>=2.31.0
 python-dotenv>=1.0.0
-langsmith>=0.1.0
+langsmith>=0.7.0,<0.8.0
 langchain>=0.3.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
@@ -35,3 +35,9 @@ qdrant-client>=1.7.0
 # --- Java Scanning Tools (install separately, not via pip) ---
 # SpotBugs:  brew install spotbugs  (or download from GitHub)
 # OWASP Dependency-Check:  brew install dependency-check
+
+# --- Testing (excluded from production image — see Dockerfile deps-prod stage) ---
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+httpx>=0.25.0
+hypothesis>=6.88.0

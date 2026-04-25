@@ -92,11 +92,20 @@ class ScanService:
             },
             metadata={"component": "ScanService"},
             tags=["scan", "local"],
-        ):
+        ) as run_trace:
+            io_trace = getattr(self.tracer, "record_component_io", None)
             # --- Step 1: RAG historical context ---
             historical_context = self._query_rag(project_context)
             if historical_context:
                 project_context["historical_context"] = historical_context
+            if callable(io_trace):
+                io_trace(
+                    name="scan.rag_context.io",
+                    component_input={"scan_id": scan_id, "project": project_context.get("name")},
+                    component_output={"historical_context_keys": list((historical_context or {}).keys())},
+                    metadata={"component": "ScanService"},
+                    tags=["scan", "rag", "io"],
+                )
 
             # --- Step 2: Orchestrate agents ---
             remediation_by_analyzer: List[Dict[str, Any]] = []
@@ -129,6 +138,22 @@ class ScanService:
                 use_llm=use_llm,
                 on_agent_completed=_on_agent_completed,
             )
+            if callable(io_trace):
+                raw_results = result.get("raw_results", {})
+                io_trace(
+                    name="scan.orchestrate.io",
+                    component_input={
+                        "scan_types": scan_types,
+                        "repo_path": repo_path,
+                        "use_llm": use_llm,
+                    },
+                    component_output={
+                        "agents_executed": result.get("agents_executed", []),
+                        "issue_counts": {k: len(v or []) for k, v in raw_results.items()},
+                    },
+                    metadata={"component": "ScanService"},
+                    tags=["scan", "orchestrator", "io"],
+                )
             if remediation_by_analyzer:
                 result["remediation_by_analyzer"] = remediation_by_analyzer
 
@@ -138,13 +163,48 @@ class ScanService:
             else:
                 result.setdefault("llm_enhanced", False)
                 enhanced_result = result
+            if callable(io_trace):
+                io_trace(
+                    name="scan.enhance_with_llm.io",
+                    component_input={
+                        "use_llm": use_llm,
+                        "llm_available": self.llm_service.is_available(),
+                    },
+                    component_output={
+                        "llm_enhanced": enhanced_result.get("llm_enhanced", False),
+                        "report_keys": list((enhanced_result.get("report") or {}).keys()),
+                    },
+                    metadata={"component": "ScanService"},
+                    tags=["scan", "llm", "io"],
+                )
 
             # --- Step 4: Store in RAG ---
             if store_in_rag:
                 self._store_in_rag(scan_id, enhanced_result, project_context)
+            if callable(io_trace):
+                io_trace(
+                    name="scan.store_in_rag.io",
+                    component_input={"store_in_rag": store_in_rag, "scan_id": scan_id},
+                    component_output={"stored": bool(store_in_rag and self.rag_service is not None)},
+                    metadata={"component": "ScanService"},
+                    tags=["scan", "rag", "io"],
+                )
 
             enhanced_result["scan_id"] = scan_id
             enhanced_result["historical_context"] = historical_context
+            if run_trace is not None:
+                try:
+                    rr = enhanced_result.get("raw_results", {})
+                    run_trace.add_outputs(
+                        {
+                            "scan_id": scan_id,
+                            "agents_executed": enhanced_result.get("agents_executed", []),
+                            "issue_counts": {k: len(v or []) for k, v in rr.items()},
+                            "llm_enhanced": enhanced_result.get("llm_enhanced", False),
+                        }
+                    )
+                except Exception:
+                    pass
             return enhanced_result
 
     def scan_github_repo(
@@ -202,14 +262,35 @@ class ScanService:
             },
             metadata={"component": "ScanService"},
             tags=["scan", "github"],
-        ):
+        ) as run_trace:
+            io_trace = getattr(self.tracer, "record_component_io", None)
             # --- Step 1: Fetch repo info ---
             progress(1, "Fetching repository information...")
             repo_info = self._fetch_repo_info(owner, repo)
+            if callable(io_trace):
+                io_trace(
+                    name="scan.fetch_repo_info.io",
+                    component_input={"owner": owner, "repo": repo},
+                    component_output={
+                        "full_name": repo_info.get("full_name"),
+                        "default_branch": repo_info.get("default_branch"),
+                        "language": repo_info.get("language"),
+                    },
+                    metadata={"component": "ScanService"},
+                    tags=["scan", "github", "io"],
+                )
 
             # --- Step 2: Clone ---
             progress(2, "Cloning repository...")
             temp_dir = self._clone_repository(owner, repo)
+            if callable(io_trace):
+                io_trace(
+                    name="scan.clone_repo.io",
+                    component_input={"owner": owner, "repo": repo},
+                    component_output={"temp_dir": temp_dir},
+                    metadata={"component": "ScanService"},
+                    tags=["scan", "git", "io"],
+                )
 
             try:
                 # --- Step 3: Detect language & build ---
@@ -218,6 +299,14 @@ class ScanService:
                 build_result = None
                 if language == "java":
                     build_result = self.builder.build(temp_dir)
+                if callable(io_trace):
+                    io_trace(
+                        name="scan.detect_and_build.io",
+                        component_input={"repo_path": temp_dir},
+                        component_output={"language": language, "build_result": build_result},
+                        metadata={"component": "ScanService"},
+                        tags=["scan", "build", "io"],
+                    )
 
                 project_context = {
                     "name": repo,
@@ -254,6 +343,21 @@ class ScanService:
                     progress(5, "Creating GitHub issues for critical/high findings...")
                     created_issues = self._create_github_issues(owner, repo, result)
                     result["github_issues_created"] = created_issues
+                    if callable(io_trace):
+                        io_trace(
+                            name="scan.create_issues.io",
+                            component_input={
+                                "owner": owner,
+                                "repo": repo,
+                                "create_issues": create_issues,
+                            },
+                            component_output={
+                                "issues_created_count": len(created_issues or []),
+                                "issue_numbers": [i.get("number") for i in (created_issues or [])],
+                            },
+                            metadata={"component": "ScanService"},
+                            tags=["scan", "github", "issues", "io"],
+                        )
                 else:
                     progress(5, "Skipping GitHub issue creation (--no-issues)")
 
@@ -269,9 +373,39 @@ class ScanService:
                         remediation_mode=remediation_mode,
                     )
                     result["remediation_pr"] = pr_result
+                    if callable(io_trace):
+                        io_trace(
+                            name="scan.create_remediation_pr.io",
+                            component_input={
+                                "owner": owner,
+                                "repo": repo,
+                                "create_pr": create_pr,
+                                "remediation_mode": remediation_mode,
+                            },
+                            component_output={
+                                "created": pr_result.get("created"),
+                                "mode": pr_result.get("mode"),
+                                "reason": pr_result.get("reason"),
+                                "pr_number": (pr_result.get("pull_request") or {}).get("number"),
+                            },
+                            metadata={"component": "ScanService"},
+                            tags=["scan", "github", "pr", "io"],
+                        )
                 else:
                     progress(6, "Skipping remediation PR creation (--no-pr)")
 
+                if run_trace is not None:
+                    try:
+                        run_trace.add_outputs(
+                            {
+                                "repository": f"{owner}/{repo}",
+                                "language": result.get("language"),
+                                "issues_created": len(result.get("github_issues_created", [])),
+                                "pr_created": bool((result.get("remediation_pr") or {}).get("created")),
+                            }
+                        )
+                    except Exception:
+                        pass
                 return result
 
             finally:

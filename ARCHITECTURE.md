@@ -21,7 +21,7 @@
 │    1. Fetch repo info (GitHub API)                                │
 │    2. Clone repository (--depth 1)                                │
 │    3. Detect language ──▶ ProjectBuilder: auto-build Java         │
-│    4. Run analyzers (Orchestrator) ──▶ LLM enhance ──▶ RAG store │
+│    4. Run analyzers (Orchestrator) ──▶ LLM enhance ──▶ RAG store  │
 │    5. Create GitHub Issues (critical/high findings)               │
 │    6. Cleanup temp clone                                          │
 │                                                                   │

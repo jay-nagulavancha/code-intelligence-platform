@@ -1,9 +1,22 @@
 # =============================================================================
-# Code Intelligence Platform - Backend Dockerfile
-# Multi-stage build for FastAPI + Security Scanning Tools
+# Code Intelligence Platform — Backend Dockerfile
+# =============================================================================
+# Stages:
+#   base         — Python + system tools (git, curl)
+#   deps-prod    — production Python packages only
+#   deps-dev     — production + test/dev packages
+#   java-tools   — JDK + SpotBugs + OWASP Dependency-Check (layered on deps-prod)
+#   production   — final lean image (no test deps, non-root user)
+#   development  — hot-reload image with test deps + source mounts
+#   test         — runs pytest suite (used in CI)
+#
+# Build targets:
+#   docker build --target production  -t cip-backend .
+#   docker build --target development -t cip-backend-dev .
+#   docker build --target test        -t cip-backend-test .
 # =============================================================================
 
-# ---------- Stage 1: Base Python ----------
+# ---------- Stage 1: Base ----------
 FROM python:3.11-slim AS base
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -13,22 +26,30 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install system dependencies (git is required for cloning repos)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# ---------- Stage 2: Python Dependencies ----------
-FROM base AS dependencies
+# ---------- Stage 2: Production Python deps ----------
+FROM base AS deps-prod
 
 COPY requirements.txt .
+
+# Install only production deps — strip out test packages
+RUN grep -v -E "^(pytest|pytest-asyncio|httpx|hypothesis)" requirements.txt \
+    > /tmp/requirements-prod.txt && \
+    pip install --no-cache-dir -r /tmp/requirements-prod.txt
+
+# ---------- Stage 3: Dev + test Python deps ----------
+FROM deps-prod AS deps-dev
+
+# Install the full requirements (includes pytest, httpx, hypothesis)
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ---------- Stage 3: Java Scanning Tools ----------
-FROM dependencies AS java-tools
+# ---------- Stage 4: Java scanning tools (layered on prod deps) ----------
+FROM deps-prod AS java-tools
 
-# Install JDK (not JRE — needed for compilation), Maven, and utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
     default-jdk-headless \
     maven \
@@ -37,61 +58,80 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     && rm -rf /var/lib/apt/lists/*
 
-# Set JAVA_HOME for the default JDK
 ENV JAVA_HOME=/usr/lib/jvm/default-java
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 
-# Install SpotBugs
+# SpotBugs
 ARG SPOTBUGS_VERSION=4.8.3
-RUN wget -q https://github.com/spotbugs/spotbugs/releases/download/${SPOTBUGS_VERSION}/spotbugs-${SPOTBUGS_VERSION}.tgz \
+RUN wget -q \
+    https://github.com/spotbugs/spotbugs/releases/download/${SPOTBUGS_VERSION}/spotbugs-${SPOTBUGS_VERSION}.tgz \
     -O /tmp/spotbugs.tgz && \
     tar -xzf /tmp/spotbugs.tgz -C /opt/ && \
     ln -s /opt/spotbugs-${SPOTBUGS_VERSION}/bin/spotbugs /usr/local/bin/spotbugs && \
     rm /tmp/spotbugs.tgz
 
-# Install OWASP Dependency-Check
+# OWASP Dependency-Check
 ARG DC_VERSION=9.0.9
-RUN wget -q https://github.com/jeremylong/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip \
+RUN wget -q \
+    https://github.com/jeremylong/DependencyCheck/releases/download/v${DC_VERSION}/dependency-check-${DC_VERSION}-release.zip \
     -O /tmp/dc.zip && \
     unzip -q /tmp/dc.zip -d /opt/ && \
     ln -s /opt/dependency-check/bin/dependency-check.sh /usr/local/bin/dependency-check.sh && \
     rm /tmp/dc.zip
 
-# ---------- Stage 4: Production ----------
+
+# ---------- Stage 5: Production ----------
 FROM java-tools AS production
 
-# Copy application code
+# Copy application source
 COPY app/ ./app/
-
-# Copy CLI scanner script and config files
 COPY scan_github_repo.py .
 COPY .env.example .
 
-# Create non-root user
-RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser
-
-# Create directories for vector DB, temp repos, and scan reports
-RUN mkdir -p /app/.vector_db /app/repos /app/reports && \
-    chown -R appuser:appuser /app
+# Non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser -d /app appuser && \
+    mkdir -p /app/.vector_db /app/repos /app/reports /tmp/remediate && \
+    chown -R appuser:appuser /app /tmp/remediate
 
 USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+# curl is available from the base stage — verify health endpoint
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1", "--log-level", "info"]
 
-# ---------- Stage 5: Development (with hot-reload) ----------
+# ---------- Stage 6: Development (hot-reload + test deps) ----------
 FROM java-tools AS development
 
-# Copy full source tree (overridden by volume mounts in docker-compose)
+# Install test deps on top of prod deps
+RUN pip install --no-cache-dir pytest>=7.4.0 pytest-asyncio>=0.21.0 httpx>=0.25.0 hypothesis>=6.88.0
+
+# Copy full source (overridden by volume mounts in docker-compose dev profile)
 COPY . .
 
-# Create directories
-RUN mkdir -p /app/.vector_db /app/repos /app/reports
+RUN mkdir -p /app/.vector_db /app/repos /app/reports /tmp/remediate
 
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+# ---------- Stage 7: Test (CI — runs pytest and exits) ----------
+FROM deps-dev AS test
+
+# Copy application source + tests
+COPY app/ ./app/
+COPY scan_github_repo.py .
+COPY tests/ ./tests/
+COPY .env.example .
+
+# Env defaults for test run (no real services needed — all mocked)
+ENV LLM_PROVIDER=ollama \
+    GITHUB_TOKEN=test-token \
+    VECTOR_DB_TYPE=faiss \
+    REMEDIATION_MODE=deterministic
+
+CMD ["python", "-m", "pytest", "tests/", "-v", "--tb=short", "--no-header"]

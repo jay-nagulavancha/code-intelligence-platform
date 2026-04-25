@@ -1,0 +1,189 @@
+<mxfile host="app.diagrams.net">
+  <diagram name="Code Intelligence Platform" id="architecture">
+    <mxGraphModel dx="1422" dy="762" grid="0" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="1169" background="#ffffff" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- TITLE -->
+        <mxCell id="title" value="Code Intelligence Platform — Architecture" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=22;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="300" y="20" width="1060" height="44" as="geometry"/>
+        </mxCell>
+
+        <!-- ── ROW 1: CLIENTS ── -->
+        <mxCell id="frontend" value="Frontend Dashboard&#xa;(React / TypeScript)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e4d8c;strokeColor=#0d2d5e;fontStyle=1;fontSize=12;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="180" y="100" width="190" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="cli" value="CLI&#xa;scan_github_repo.py" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e4d8c;strokeColor=#0d2d5e;fontStyle=1;fontSize=12;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="430" y="100" width="190" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="ci" value="CI / CD Integration&#xa;(GitHub Actions etc.)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1e4d8c;strokeColor=#0d2d5e;fontStyle=1;fontSize=12;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="680" y="100" width="190" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ── ROW 2: API LAYER ── -->
+        <mxCell id="api_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;dashed=1;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="150" y="230" width="790" height="110" as="geometry"/>
+        </mxCell>
+        <mxCell id="api_label" value="FastAPI — API Layer" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="162" y="236" width="220" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="route_scan" value="POST /api/scan&#xa;(local repo scan)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8860b;strokeColor=#7a5c00;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="168" y="262" width="168" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="route_get_scan" value="GET /api/scan/{scan_id}&#xa;(retrieve result)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8860b;strokeColor=#7a5c00;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="352" y="262" width="168" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="route_remediate" value="POST /api/scan/{scan_id}&#xa;/remediate  ★ NEW" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b22222;strokeColor=#7a0000;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="536" y="262" width="168" height="54" as="geometry"/>
+        </mxCell>
+        <mxCell id="route_github_scan" value="POST /api/github/scan&#xa;(GitHub repo scan)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8860b;strokeColor=#7a5c00;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="720" y="262" width="168" height="54" as="geometry"/>
+        </mxCell>
+
+        <!-- SCAN_STORE -->
+        <mxCell id="scan_store" value="SCAN_STORE&#xa;(in-memory dict)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#6a0dad;strokeColor=#3d0070;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="980" y="248" width="150" height="76" as="geometry"/>
+        </mxCell>
+
+        <!-- ── ROW 3: CORE SERVICES ── -->
+        <mxCell id="scan_service" value="ScanService&#xa;(Full Pipeline)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a6b2a;strokeColor=#0d3d17;fontStyle=1;fontSize=13;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="330" y="430" width="200" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="pr_agent" value="PRAgent&#xa;(Remediation)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b22222;strokeColor=#7a0000;fontStyle=1;fontSize=13;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="610" y="430" width="200" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="temp_clone" value="Temp Clone&#xa;(git clone --depth 1)" style="shape=folder;whiteSpace=wrap;html=1;fillColor=#555555;strokeColor=#222222;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="840" y="430" width="160" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ── ROW 4: ORCHESTRATOR ── -->
+        <mxCell id="orchestrator" value="OrchestratorAgent&#xa;decide → run → combine" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a6b2a;strokeColor=#0d3d17;fontStyle=1;fontSize=13;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="330" y="570" width="220" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ── ROW 5: ANALYZERS ── -->
+        <mxCell id="analyzers_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;dashed=1;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="70" y="710" width="890" height="120" as="geometry"/>
+        </mxCell>
+        <mxCell id="analyzers_label" value="Analyzers" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=13;fontStyle=1;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="82" y="716" width="140" height="22" as="geometry"/>
+        </mxCell>
+        <mxCell id="sec_analyzer" value="Security Analyzer&#xa;Bandit (Py)&#xa;SpotBugs (Java)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8520a;strokeColor=#7a3200;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="88" y="742" width="152" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="oss_analyzer" value="OSS Analyzer&#xa;pip-licenses (Py)&#xa;OWASP DepCheck (Java)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8520a;strokeColor=#7a3200;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="256" y="742" width="162" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="change_analyzer" value="Change Analyzer&#xa;git diff" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8520a;strokeColor=#7a3200;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="434" y="742" width="148" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="dep_analyzer" value="Deprecation Analyzer&#xa;AST rules" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8520a;strokeColor=#7a3200;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="598" y="742" width="152" height="68" as="geometry"/>
+        </mxCell>
+        <mxCell id="gh_analyzer" value="GitHub Analyzer&#xa;(MCP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b8520a;strokeColor=#7a3200;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="766" y="742" width="148" height="68" as="geometry"/>
+        </mxCell>
+
+        <!-- ── RIGHT COLUMN: SUPPORT SERVICES ── -->
+        <mxCell id="proj_detector" value="ProjectDetector&#xa;Language detection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1160" y="230" width="220" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="proj_builder" value="ProjectBuilder&#xa;Maven / Gradle auto-build" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1160" y="320" width="220" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="llm_service" value="LLMService&#xa;Ollama / Groq / OpenAI / HF" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1160" y="430" width="220" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="rag_service" value="RAGService&#xa;FAISS / Qdrant&#xa;all-MiniLM-L6-v2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1160" y="530" width="220" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="mcp_github" value="MCPGitHubService&#xa;GitHub REST API (MCP)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1160" y="630" width="220" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="langsmith" value="LangSmithTracer&#xa;(Observability)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1160" y="730" width="220" height="64" as="geometry"/>
+        </mxCell>
+        <mxCell id="github_ext" value="GitHub.com&#xa;(External)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#222222;strokeColor=#000000;fontSize=12;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="1430" y="630" width="160" height="64" as="geometry"/>
+        </mxCell>
+
+        <!-- ── EDGES: Clients → API ── -->
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#333333;strokeWidth=2;" parent="1" source="frontend" target="route_scan" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#333333;strokeWidth=2;" parent="1" source="frontend" target="route_get_scan" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#333333;strokeWidth=2;" parent="1" source="frontend" target="route_remediate" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e4" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#333333;strokeWidth=2;" parent="1" source="cli" target="route_github_scan" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#333333;strokeWidth=2;" parent="1" source="ci" target="route_remediate" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── EDGES: API → SCAN_STORE ── -->
+        <mxCell id="e6" value="store" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#6a0dad;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="route_scan" target="scan_store" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e7" value="lookup" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#6a0dad;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="route_get_scan" target="scan_store" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e8" value="lookup" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#6a0dad;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="route_remediate" target="scan_store" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── EDGES: API → Services ── -->
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="route_scan" target="scan_service" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="route_github_scan" target="scan_service" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e11" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b22222;strokeWidth=2;" parent="1" source="route_remediate" target="pr_agent" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── EDGES: ScanService ── -->
+        <mxCell id="e12" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="scan_service" target="orchestrator" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e13" value="create_pr=True" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#555555;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="scan_service" target="pr_agent" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e20" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4a235a;strokeWidth=2;" parent="1" source="scan_service" target="llm_service" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e21" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4a235a;strokeWidth=2;" parent="1" source="scan_service" target="rag_service" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e22" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4a235a;strokeWidth=2;" parent="1" source="scan_service" target="mcp_github" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e23" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4a235a;strokeWidth=2;" parent="1" source="scan_service" target="proj_detector" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e24" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4a235a;strokeWidth=2;" parent="1" source="scan_service" target="proj_builder" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── EDGES: PRAgent ── -->
+        <mxCell id="e19" value="clone repo" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b22222;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="pr_agent" target="temp_clone" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e25" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b22222;strokeWidth=2;" parent="1" source="pr_agent" target="llm_service" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e26" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#b22222;strokeWidth=2;" parent="1" source="pr_agent" target="mcp_github" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── EDGES: Orchestrator ── -->
+        <mxCell id="e14" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="orchestrator" target="sec_analyzer" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e15" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="orchestrator" target="oss_analyzer" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="orchestrator" target="change_analyzer" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="orchestrator" target="dep_analyzer" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e18" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#1a6b2a;strokeWidth=2;" parent="1" source="orchestrator" target="gh_analyzer" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e27" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#4a235a;strokeWidth=2;" parent="1" source="orchestrator" target="llm_service" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── EDGES: External ── -->
+        <mxCell id="e28" value="REST API" style="edgeStyle=orthogonalEdgeStyle;strokeColor=#222222;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="mcp_github" target="github_ext" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e29" value="traces" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#4a235a;strokeWidth=2;fontColor=#000000;fontSize=11;fontStyle=1;" parent="1" source="llm_service" target="langsmith" edge="1"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- ── LEGEND ── -->
+        <mxCell id="legend_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f0f0f0;strokeColor=#333333;strokeWidth=2;" parent="1" vertex="1">
+          <mxGeometry x="70" y="900" width="560" height="180" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_title" value="Legend" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontStyle=1;fontSize=14;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="90" y="912" width="120" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="l1" value="Client / UI" style="rounded=1;fillColor=#1e4d8c;strokeColor=#0d2d5e;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="90" y="944" width="120" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l2" value="API Route" style="rounded=1;fillColor=#b8860b;strokeColor=#7a5c00;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="226" y="944" width="120" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l3" value="New Endpoint ★" style="rounded=1;fillColor=#b22222;strokeColor=#7a0000;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="362" y="944" width="140" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l4" value="Core Service / Agent" style="rounded=1;fillColor=#1a6b2a;strokeColor=#0d3d17;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="90" y="992" width="160" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l5" value="Analyzer" style="rounded=1;fillColor=#b8520a;strokeColor=#7a3200;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="266" y="992" width="120" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l6" value="Support Service" style="rounded=1;fillColor=#4a235a;strokeColor=#2d1236;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="402" y="992" width="140" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l7" value="In-memory Store" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#6a0dad;strokeColor=#3d0070;fontSize=11;fontStyle=1;fontColor=#ffffff;" parent="1" vertex="1">
+          <mxGeometry x="90" y="1040" width="150" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="l8" value="- - -  dashed line = optional / async path" style="text;html=1;strokeColor=none;fillColor=none;align=left;fontSize=11;fontStyle=0;fontColor=#000000;" parent="1" vertex="1">
+          <mxGeometry x="260" y="1048" width="340" height="22" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

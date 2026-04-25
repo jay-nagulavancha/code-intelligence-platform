@@ -157,6 +157,21 @@ class MCPGitHubService:
                 }
             },
             {
+                "name": "github_create_pull_request_review",
+                "description": "Create a review comment on a pull request",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string", "description": "Repository owner"},
+                        "repo": {"type": "string", "description": "Repository name"},
+                        "pull_number": {"type": "integer", "description": "Pull request number"},
+                        "body": {"type": "string", "description": "Review comment body"},
+                        "event": {"type": "string", "description": "Review event (default: COMMENT)"}
+                    },
+                    "required": ["owner", "repo", "pull_number", "body"]
+                }
+            },
+            {
                 "name": "github_get_diff",
                 "description": "Get diff between two commits or branches",
                 "inputSchema": {
@@ -197,6 +212,7 @@ class MCPGitHubService:
             "github_create_issue": self.create_issue,
             "github_get_pull_requests": self.get_pull_requests,
             "github_create_pull_request": self.create_pull_request,
+            "github_create_pull_request_review": self.create_pull_request_review,
             "github_get_diff": self.get_diff
         }
 
@@ -400,6 +416,32 @@ class MCPGitHubService:
             "url": pr["html_url"],
             "head": pr["head"]["ref"],
             "base": pr["base"]["ref"],
+        }
+
+    def create_pull_request_review(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
+        body: str,
+        event: str = "COMMENT",
+    ) -> Dict[str, Any]:
+        """Create a pull request review with a summary comment."""
+        url = f"{self.base_url}/repos/{owner}/{repo}/pulls/{pull_number}/reviews"
+        payload = {
+            "body": body,
+            "event": event,
+        }
+        response = requests.post(url, headers=self.headers, json=payload)
+        response.raise_for_status()
+        review = response.json()
+        return {
+            "id": review.get("id"),
+            "state": review.get("state"),
+            "body": review.get("body"),
+            "submitted_at": review.get("submitted_at"),
+            "user": (review.get("user") or {}).get("login"),
+            "html_url": review.get("html_url"),
         }
 
     def get_diff(self, owner: str, repo: str, base: str, head: str) -> Dict[str, Any]:

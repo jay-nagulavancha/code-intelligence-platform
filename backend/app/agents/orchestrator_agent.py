@@ -118,7 +118,12 @@ class OrchestratorAgent:
         for agent_type, issues in agent_results.items():
             compact[agent_type] = {
                 "count": len(issues),
-                "sample": issues[:5],
+                # Only send 3 issues max, and strip heavy fields to keep prompt small
+                "sample": [
+                    {k: v for k, v in i.items()
+                     if k in ("message", "severity", "file", "line", "bug_type", "package", "type")}
+                    for i in issues[:3]
+                ],
             }
 
         # Strip heavy fields from context to keep prompt small
@@ -127,28 +132,28 @@ class OrchestratorAgent:
             if k not in ("historical_context", "build_result", "repo_info")
         }
 
-        prompt = f"""Analyze the following scan results and create a report.
+        prompt = f"""Analyze the following scan results and create a concise report.
 
 Project: {json.dumps(ctx, indent=2, default=str)}
 
-Results (showing up to 5 issues per agent):
+Results (showing up to 3 issues per agent):
 {json.dumps(compact, indent=2, default=str)}
 
-Respond with valid JSON containing:
-1. summary: key findings (one paragraph)
-2. critical_issues: list of issue descriptions needing immediate attention
-3. recommendations: list of actionable recommendations
-4. next_steps: list of suggested next steps
-"""
+Respond with valid JSON only (no markdown, no explanation) containing exactly these keys:
+{{"summary": "one paragraph of key findings",
+  "critical_issues": ["issue description 1", "issue description 2"],
+  "recommendations": ["recommendation 1", "recommendation 2"],
+  "next_steps": ["next step 1", "next step 2"]}}
+Keep each list to 3 items maximum. Be concise."""
 
         try:
             response = self.llm_service.generate(
                 prompt=prompt,
                 system_prompt=(
                     "You are an expert code analyst. "
-                    "Respond ONLY with valid JSON, no markdown fences."
+                    "Respond ONLY with valid compact JSON. No markdown fences. No extra text."
                 ),
-                max_tokens=512,
+                max_tokens=1024,
             )
             # Extract JSON from response
             text = response.strip()
@@ -156,6 +161,12 @@ Respond with valid JSON containing:
                 text = text.split("```json")[1].split("```")[0].strip()
             elif "```" in text:
                 text = text.split("```")[1].split("```")[0].strip()
+
+            # Find the outermost JSON object in case the model added extra text
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start != -1 and end > start:
+                text = text[start:end]
 
             report = json.loads(text)
             report["raw_issues"] = fallback["raw_issues"]

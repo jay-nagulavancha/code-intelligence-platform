@@ -1,4 +1,12 @@
-# Python
+# =============================================================================
+# .dockerignore — Code Intelligence Platform Backend
+# =============================================================================
+# NOTE: test files and scan_github_repo.py are intentionally NOT excluded here
+# because the test and development stages need them.
+# The production stage uses explicit COPY commands so these never land there.
+# =============================================================================
+
+# Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
@@ -18,29 +26,29 @@ env/
 *.swp
 *.swo
 
-# Environment files (use docker-compose env)
+# Environment files — injected at runtime via docker-compose / AWS
 .env
 
-# Docker
+# Docker meta files
 Dockerfile
 .dockerignore
 
-# Docs and diagrams
+# Docs and diagrams (not needed in any image)
 *.md
 *.excalidraw
 *.png
 *.svg
 
-# Test files
-test_*.py
-scan_github_repo.py
+# Scan output files (runtime artefacts, not source)
 security_scan_summary.md
+scan_report_*.json
+security_scan_*.json
+GITHUB_MCP_TEST_RESULTS.md
 
-# Vector DB (mounted as volume)
+# Vector DB and temp repos (mounted as volumes at runtime)
 .vector_db/
-
-# Repos (mounted as volume)
 repos/
+reports/
 
 # Git
 .git/

@@ -12,29 +12,51 @@ services:
   backend:
     environment:
       # --- LLM Provider ---
-      # Ollama (default - local, open-source)
+      # Option 1: Ollama (default - local, open-source, needs ollama service running)
       - LLM_PROVIDER=ollama
       - OLLAMA_MODEL=llama3.2:3b
 
-      # OpenAI (uncomment for production)
+      # Option 2: Groq (FREE cloud, ~500 tok/s — recommended for demos/AWS)
+      # - LLM_PROVIDER=groq
+      # - GROQ_API_KEY=gsk_your-key-here
+      # - GROQ_MODEL=llama-3.1-8b-instant
+
+      # Option 3: OpenAI
       # - LLM_PROVIDER=openai
       # - OPENAI_API_KEY=sk-your-key-here
       # - OPENAI_MODEL=gpt-4o-mini
 
-      # Hugging Face (uncomment for custom models)
+      # Option 4: Hugging Face
       # - LLM_PROVIDER=huggingface
       # - HUGGINGFACE_API_KEY=hf_your-key-here
       # - HF_MODEL=mistralai/Mistral-7B-Instruct-v0.2
 
+      # --- LangChain (optional wrapper for OpenAI/Groq) ---
+      # - LLM_USE_LANGCHAIN=true
+
       # --- GitHub MCP ---
       - GITHUB_TOKEN=ghp_your_token_here
+
+      # --- Remediation ---
+      # deterministic: safe rule-based Java patches only
+      # nondeterministic: LLM-assisted patch generation
+      - REMEDIATION_MODE=deterministic
+      - REMEDIATION_MAX_ATTEMPTS=2
+      - REMEDIATION_MAX_FILES=3
+      - POST_PR_REVIEW_ENABLED=true
 
       # --- Vector DB ---
       # Use "faiss" (default, in-memory) or "qdrant" (persistent, scalable)
       - VECTOR_DB_TYPE=faiss
 
-      # --- LLM Tokens ---
-      - LLM_MAX_TOKENS=1000
+      # --- LLM Tuning ---
+      - LLM_MAX_TOKENS=1024
+      - LLM_TIMEOUT=120
+
+  # --- Frontend API URL ---
+  frontend:
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
 
   # Enable GPU for Ollama (NVIDIA)
   # ollama:

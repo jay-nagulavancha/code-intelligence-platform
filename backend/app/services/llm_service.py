@@ -10,6 +10,7 @@ Supported providers:
 """
 import os
 import json
+import time
 import requests
 from typing import Optional, Dict, Any, List
 from enum import Enum
@@ -62,6 +63,8 @@ class LLMService:
         # Global settings
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1024"))
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))
+        self.retry_max_attempts = int(os.getenv("LLM_RETRY_MAX_ATTEMPTS", "3"))
+        self.retry_backoff_seconds = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2.0"))
         # Optional LangChain path (mainly for OpenAI-compatible providers)
         self.use_langchain = os.getenv("LLM_USE_LANGCHAIN", "false").lower() in (
             "1", "true", "yes", "on"
@@ -241,20 +244,70 @@ class LLMService:
             "Authorization": f"Bearer {self.api_key}",
         }
 
-        try:
-            response = requests.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=self.timeout,
-            )
-            response.raise_for_status()
-            result = response.json()
-            return result["choices"][0]["message"]["content"].strip()
-        except requests.exceptions.Timeout:
-            raise RuntimeError(f"{self.provider} request timed out ({self.timeout}s)")
-        except requests.exceptions.RequestException as e:
-            raise RuntimeError(f"{self.provider} API request failed: {str(e)}")
+        attempts = max(1, self.retry_max_attempts)
+        for attempt in range(1, attempts + 1):
+            try:
+                response = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout,
+                )
+
+                # Handle provider rate limits with retry/backoff.
+                if response.status_code == 429:
+                    if attempt >= attempts:
+                        response.raise_for_status()
+                    retry_after = response.headers.get("Retry-After")
+                    try:
+                        wait_s = float(retry_after) if retry_after else 0.0
+                    except ValueError:
+                        wait_s = 0.0
+                    if wait_s <= 0:
+                        wait_s = self.retry_backoff_seconds * attempt
+                    print(
+                        f"{self.provider} rate limited (429). "
+                        f"Retrying in {wait_s:.1f}s (attempt {attempt}/{attempts})"
+                    )
+                    time.sleep(min(wait_s, 30.0))
+                    continue
+
+                # Retry transient server-side failures.
+                if 500 <= response.status_code < 600 and attempt < attempts:
+                    wait_s = self.retry_backoff_seconds * attempt
+                    print(
+                        f"{self.provider} server error ({response.status_code}). "
+                        f"Retrying in {wait_s:.1f}s (attempt {attempt}/{attempts})"
+                    )
+                    time.sleep(min(wait_s, 30.0))
+                    continue
+
+                response.raise_for_status()
+                result = response.json()
+                return result["choices"][0]["message"]["content"].strip()
+
+            except requests.exceptions.Timeout:
+                if attempt < attempts:
+                    wait_s = self.retry_backoff_seconds * attempt
+                    print(
+                        f"{self.provider} timeout ({self.timeout}s). "
+                        f"Retrying in {wait_s:.1f}s (attempt {attempt}/{attempts})"
+                    )
+                    time.sleep(min(wait_s, 30.0))
+                    continue
+                raise RuntimeError(f"{self.provider} request timed out ({self.timeout}s)")
+            except requests.exceptions.RequestException as e:
+                if attempt < attempts:
+                    wait_s = self.retry_backoff_seconds * attempt
+                    print(
+                        f"{self.provider} request failed. "
+                        f"Retrying in {wait_s:.1f}s (attempt {attempt}/{attempts}): {e}"
+                    )
+                    time.sleep(min(wait_s, 30.0))
+                    continue
+                raise RuntimeError(f"{self.provider} API request failed: {str(e)}")
+
+        raise RuntimeError(f"{self.provider} API request failed after retries")
 
     def _generate_openai_compat_langchain(
         self,
@@ -371,6 +424,24 @@ class LLMService:
                 f"Please check your configuration."
             )
 
+        io_trace = getattr(self.tracer, "record_component_io", None)
+        if callable(io_trace):
+            io_trace(
+                name="llm.generate.io",
+                component_input={
+                    "provider": self.provider,
+                    "model": self.model,
+                    "prompt": prompt,
+                    "system_prompt": system_prompt or "",
+                    "temperature": temperature,
+                    "max_tokens": max_tokens or self.max_tokens,
+                    "use_langchain": self.use_langchain,
+                },
+                component_output={"status": "started"},
+                metadata={"component": "LLMService"},
+                tags=["llm", "input"],
+            )
+
         with self.tracer.trace(
             name="llm.generate",
             inputs={
@@ -383,23 +454,73 @@ class LLMService:
             },
             metadata={"component": "LLMService"},
             tags=["llm", self.provider],
-        ):
+        ) as trace_run:
+            output_text = ""
             if self.provider == LLMProvider.OLLAMA.value:
-                return self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
+                output_text = self._generate_ollama(prompt, system_prompt, temperature, max_tokens)
             elif self.provider in (LLMProvider.OPENAI.value, LLMProvider.GROQ.value):
                 if self.use_langchain:
                     try:
-                        return self._generate_openai_compat_langchain(
+                        output_text = self._generate_openai_compat_langchain(
                             prompt, system_prompt, temperature, max_tokens
                         )
+                        if callable(io_trace):
+                            io_trace(
+                                name="llm.generate.output",
+                                component_input={"provider": self.provider, "path": "langchain"},
+                                component_output={
+                                    "response": output_text,
+                                    "response_chars": len(output_text),
+                                },
+                                metadata={"component": "LLMService"},
+                                tags=["llm", "output"],
+                            )
+                        if trace_run is not None:
+                            try:
+                                trace_run.add_outputs(
+                                    {
+                                        "provider": self.provider,
+                                        "path": "langchain",
+                                        "response": output_text,
+                                        "response_chars": len(output_text),
+                                    }
+                                )
+                            except Exception:
+                                pass
+                        return output_text
                     except Exception as e:
                         # Fail open to existing stable path.
                         print(f"LangChain path failed, falling back to direct HTTP: {e}")
-                return self._generate_openai_compat(prompt, system_prompt, temperature, max_tokens)
+                output_text = self._generate_openai_compat(prompt, system_prompt, temperature, max_tokens)
             elif self.provider == LLMProvider.HUGGINGFACE.value:
-                return self._generate_huggingface(prompt, system_prompt, temperature, max_tokens)
+                output_text = self._generate_huggingface(prompt, system_prompt, temperature, max_tokens)
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}")
+
+            if callable(io_trace):
+                io_trace(
+                    name="llm.generate.output",
+                    component_input={"provider": self.provider, "path": "direct"},
+                    component_output={
+                        "response": output_text,
+                        "response_chars": len(output_text),
+                    },
+                    metadata={"component": "LLMService"},
+                    tags=["llm", "output"],
+                )
+            if trace_run is not None:
+                try:
+                    trace_run.add_outputs(
+                        {
+                            "provider": self.provider,
+                            "path": "direct",
+                            "response": output_text,
+                            "response_chars": len(output_text),
+                        }
+                    )
+                except Exception:
+                    pass
+            return output_text
 
     def generate_release_notes(
         self, 

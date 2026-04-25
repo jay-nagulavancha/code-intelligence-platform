@@ -31,6 +31,9 @@ class PRAgent:
         self.default_mode = os.getenv("REMEDIATION_MODE", "deterministic").strip().lower()
         self.max_attempts = int(os.getenv("REMEDIATION_MAX_ATTEMPTS", "2"))
         self.max_files = int(os.getenv("REMEDIATION_MAX_FILES", "3"))
+        self.post_pr_review_enabled = os.getenv("POST_PR_REVIEW_ENABLED", "true").lower() in (
+            "1", "true", "yes", "on"
+        )
 
     def _effective_mode(self, remediation_mode: Optional[str]) -> str:
         mode = (remediation_mode or self.default_mode or "deterministic").strip().lower()
@@ -264,6 +267,7 @@ Preserve unrelated logic.
         title: str,
         body: str,
         mode: str,
+        scan_result: Optional[Dict[str, Any]] = None,
         extra: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         checkout = self._run_git(repo_path, ["checkout", "-b", branch_name])
@@ -303,6 +307,16 @@ Preserve unrelated logic.
                 "changed_files": rel_changed,
                 "pull_request": pr,
             }
+            review = self._post_pr_review(
+                owner=owner,
+                repo=repo,
+                pull_number=pr["number"],
+                repo_path=repo_path,
+                changed_files=rel_changed,
+                scan_result=scan_result or {},
+                mode=mode,
+            )
+            payload["post_pr_review"] = review
             if extra:
                 payload.update(extra)
             return payload
@@ -317,6 +331,108 @@ Preserve unrelated logic.
             if extra:
                 payload.update(extra)
             return payload
+
+    def _collect_changed_file_snippets(
+        self, repo_path: str, changed_files: List[str], max_files: int = 5, max_chars: int = 1200
+    ) -> Dict[str, str]:
+        snippets: Dict[str, str] = {}
+        for rel_path in changed_files[:max_files]:
+            abs_path = os.path.join(repo_path, rel_path)
+            if not os.path.exists(abs_path):
+                continue
+            try:
+                with open(abs_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                snippets[rel_path] = content[:max_chars]
+            except Exception:
+                continue
+        return snippets
+
+    def _build_review_body(
+        self,
+        repo_path: str,
+        changed_files: List[str],
+        scan_result: Dict[str, Any],
+        mode: str,
+    ) -> str:
+        summary = (scan_result.get("report") or {}).get("summary", {})
+        if not self.llm_service.is_available():
+            return (
+                "## Automated Post-PR Review\n\n"
+                f"- Remediation mode: `{mode}`\n"
+                f"- Changed files: {len(changed_files)}\n"
+                f"- Total findings in scan report: {summary.get('total_issues', 'n/a')}\n\n"
+                "Please verify:\n"
+                "- unit/integration tests\n"
+                "- edge cases and null handling\n"
+                "- dependency and security checks\n"
+            )
+
+        snippets = self._collect_changed_file_snippets(repo_path, changed_files)
+        prompt = f"""Review this remediation PR and provide concise review comments.
+
+Remediation mode: {mode}
+Changed files: {changed_files}
+Scan summary: {json.dumps(summary, default=str)}
+
+Updated file snippets (truncated):
+{json.dumps(snippets, indent=2, default=str)}
+
+Return markdown with:
+1) Overall risk (Low/Medium/High)
+2) 3-6 actionable review comments
+3) Required follow-up validation checks
+Keep it concise and practical.
+"""
+        return self.llm_service.generate(
+            prompt=prompt,
+            system_prompt="You are a senior code reviewer focused on correctness and security.",
+            temperature=0.2,
+            max_tokens=900,
+        ).strip()
+
+    def _post_pr_review(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int,
+        repo_path: str,
+        changed_files: List[str],
+        scan_result: Dict[str, Any],
+        mode: str,
+    ) -> Dict[str, Any]:
+        if not self.post_pr_review_enabled:
+            return {"created": False, "reason": "post_pr_review_disabled"}
+        try:
+            body = self._build_review_body(
+                repo_path=repo_path,
+                changed_files=changed_files,
+                scan_result=scan_result,
+                mode=mode,
+            )
+        except Exception as e:
+            body = (
+                "## Automated Post-PR Review\n\n"
+                f"Review generation failed: {e}\n"
+                "- Please run tests and static analysis before merge."
+            )
+        try:
+            review = self.github_service.create_pull_request_review(
+                owner=owner,
+                repo=repo,
+                pull_number=pull_number,
+                body=body,
+                event="COMMENT",
+            )
+            return {
+                "created": True,
+                "review": review,
+            }
+        except Exception as e:
+            return {
+                "created": False,
+                "reason": f"create_review_failed: {e}",
+            }
 
     def _ensure_import(self, content: str, import_line: str) -> str:
         if import_line in content:
@@ -647,6 +763,7 @@ Preserve unrelated logic.
                 title=title,
                 body=body,
                 mode=mode,
+                scan_result=scan_result,
                 extra={"details": ai_fix_result.get("details", [])},
             )
 
@@ -699,5 +816,6 @@ Preserve unrelated logic.
             title=title,
             body=body,
             mode=mode,
+            scan_result=scan_result,
         )
 

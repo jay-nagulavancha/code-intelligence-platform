@@ -45,21 +45,57 @@ class RAGService:
     # Initialisation (lazy, quiet)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _suppress_noisy_loggers():
+        """
+        Context manager that silences transformers/HF/sentence-transformers loggers
+        including child loggers like transformers.utils.loading_report that emit
+        on the root handler. Works across all Python/transformers versions.
+        """
+        import contextlib
+
+        @contextlib.contextmanager
+        def _ctx():
+            noisy = [
+                "transformers",
+                "transformers.utils.loading_report",
+                "sentence_transformers",
+                "huggingface_hub",
+                "huggingface_hub.utils._http",
+                "huggingface_hub.file_download",
+            ]
+            # Save and silence each named logger
+            saved_levels = {}
+            for name in noisy:
+                lg = logging.getLogger(name)
+                saved_levels[name] = lg.level
+                lg.setLevel(logging.CRITICAL)
+
+            # Also temporarily remove handlers from root logger to stop
+            # propagated warnings reaching a potentially stale StreamHandler
+            root = logging.getLogger()
+            saved_handlers = root.handlers[:]
+            root.handlers = []
+
+            try:
+                yield
+            finally:
+                # Restore root handlers first
+                root.handlers = saved_handlers
+                # Then restore individual logger levels
+                for name, level in saved_levels.items():
+                    logging.getLogger(name).setLevel(level)
+
+        return _ctx()
+
     def _initialize_faiss(self):
         """Initialize FAISS vector database."""
-        # Suppress noisy warnings from torch / transformers / numpy during import
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            old_stderr = sys.stderr
-            sys.stderr = open(os.devnull, "w")
-            try:
+        with self._suppress_noisy_loggers():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
                 import faiss  # noqa: F811
                 from sentence_transformers import SentenceTransformer
-            finally:
-                sys.stderr.close()
-                sys.stderr = old_stderr
-
-        self._embeddings = SentenceTransformer("all-MiniLM-L6-v2")
+            self._embeddings = SentenceTransformer("all-MiniLM-L6-v2")
 
         index_path = os.path.join(self.persist_dir, "faiss.index")
         metadata_path = os.path.join(self.persist_dir, "metadata.json")
@@ -77,19 +113,13 @@ class RAGService:
 
     def _initialize_qdrant(self):
         """Initialize Qdrant vector database."""
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            old_stderr = sys.stderr
-            sys.stderr = open(os.devnull, "w")
-            try:
+        with self._suppress_noisy_loggers():
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
                 from qdrant_client import QdrantClient
                 from qdrant_client.models import Distance, VectorParams
                 from sentence_transformers import SentenceTransformer
-            finally:
-                sys.stderr.close()
-                sys.stderr = old_stderr
-
-        self._embeddings = SentenceTransformer("all-MiniLM-L6-v2")
+            self._embeddings = SentenceTransformer("all-MiniLM-L6-v2")
 
         qdrant_url = os.getenv("QDRANT_URL", "localhost")
         qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))

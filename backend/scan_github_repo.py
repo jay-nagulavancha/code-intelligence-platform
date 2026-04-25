@@ -231,6 +231,15 @@ def print_scan_results(result: dict):
             changed = remediation_pr.get("changed_files", [])
             if changed:
                 print(f"    Files changed: {len(changed)}")
+            review_info = remediation_pr.get("post_pr_review", {})
+            if review_info:
+                if review_info.get("created"):
+                    review = review_info.get("review", {})
+                    print(f"    Review comment: ✅ posted")
+                    if review.get("html_url"):
+                        print(f"       {review.get('html_url')}")
+                else:
+                    print(f"    Review comment: ⏭️  skipped ({review_info.get('reason', 'unknown')})")
         else:
             print(f"    ⏭️  No PR created ({remediation_pr.get('reason', 'unknown')})")
 

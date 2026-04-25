@@ -11,8 +11,11 @@
 # Development (with hot-reload + Java tools):
 #   docker compose --profile dev up -d
 #
-# Full stack (with Qdrant):
+# Full stack (with Qdrant + Frontend):
 #   docker compose --profile full up -d
+#
+# Backend + Frontend only:
+#   docker compose --profile frontend up -d
 #
 # Pull Ollama model (first time):
 #   docker compose exec ollama ollama pull llama3.2:3b
@@ -52,6 +55,21 @@ services:
       # - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
       # GitHub MCP
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Groq (cloud LLM, fast + free tier)
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.1-8b-instant}
+      # OpenAI
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      # HuggingFace
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      # LangChain
+      - LLM_USE_LANGCHAIN=${LLM_USE_LANGCHAIN:-false}
+      # Remediation
+      - REMEDIATION_MODE=${REMEDIATION_MODE:-deterministic}
+      - REMEDIATION_MAX_ATTEMPTS=${REMEDIATION_MAX_ATTEMPTS:-2}
+      - REMEDIATION_MAX_FILES=${REMEDIATION_MAX_FILES:-3}
+      - POST_PR_REVIEW_ENABLED=${POST_PR_REVIEW_ENABLED:-true}
       # Vector DB
       - VECTOR_DB_TYPE=${VECTOR_DB_TYPE:-faiss}
       - VECTOR_DB_DIR=/app/.vector_db
@@ -102,6 +120,16 @@ services:
       - LANGSMITH_PROJECT=${LANGSMITH_PROJECT:-code-intelligence-platform}
       - LANGSMITH_ENDPOINT=${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
       - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=${GROQ_MODEL:-llama-3.1-8b-instant}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - LLM_USE_LANGCHAIN=${LLM_USE_LANGCHAIN:-false}
+      - REMEDIATION_MODE=${REMEDIATION_MODE:-deterministic}
+      - REMEDIATION_MAX_ATTEMPTS=${REMEDIATION_MAX_ATTEMPTS:-2}
+      - REMEDIATION_MAX_FILES=${REMEDIATION_MAX_FILES:-3}
+      - POST_PR_REVIEW_ENABLED=${POST_PR_REVIEW_ENABLED:-true}
       - VECTOR_DB_TYPE=${VECTOR_DB_TYPE:-faiss}
       - VECTOR_DB_DIR=/app/.vector_db
       - QDRANT_URL=qdrant
@@ -111,12 +139,36 @@ services:
       # Mount full source for hot-reload (app code + CLI script)
       - ./backend/app:/app/app
       - ./backend/scan_github_repo.py:/app/scan_github_repo.py
+      - ./backend/tests:/app/tests
       - vector-data:/app/.vector_db
       - repo-data:/app/repos
       - scan-reports:/app/reports
     depends_on:
       ollama:
         condition: service_started
+    networks:
+      - cip-network
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
+  # Frontend - React Dashboard (profile: frontend)
+  # NOTE: frontend/Dockerfile and full package.json must exist before enabling.
+  # Enable with: docker compose --profile frontend up -d
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: cip-frontend
+    profiles:
+      - frontend
+      - full
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:8000}
+    depends_on:
+      - backend
     networks:
       - cip-network
     restart: unless-stopped
