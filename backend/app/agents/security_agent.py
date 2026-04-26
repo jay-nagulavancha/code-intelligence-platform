@@ -21,6 +21,9 @@ class SecurityAnalyzer:
     def __init__(self):
         self.detector = ProjectDetector()
         self.builder = ProjectBuilder()
+        self.enable_semgrep = os.getenv("SECURITY_ENABLE_SEMGREP", "true").lower() in (
+            "1", "true", "yes", "on"
+        )
 
     def _detect_language(self, repo_path: str) -> str:
         """Detect primary language of the project."""
@@ -249,6 +252,66 @@ class SecurityAnalyzer:
         except Exception as e:
             raise RuntimeError(f"SpotBugs scan failed: {str(e)}")
 
+    def _scan_semgrep(self, repo_path: str) -> List[Dict]:
+        """
+        Cross-language static security scan using Semgrep.
+        """
+        try:
+            result = subprocess.run(
+                [
+                    "semgrep",
+                    "--config",
+                    "auto",
+                    "--json",
+                    repo_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            # semgrep returns 1 when findings exist; both are valid.
+            if result.returncode not in (0, 1):
+                raise RuntimeError(result.stderr or result.stdout)
+
+            raw = (result.stdout or "").strip()
+            if not raw:
+                return []
+
+            payload = json.loads(raw)
+            issues: List[Dict] = []
+
+            for finding in payload.get("results", []):
+                extra = finding.get("extra", {})
+                severity_raw = (extra.get("severity") or "WARNING").lower()
+                severity_map = {
+                    "error": "high",
+                    "warning": "medium",
+                    "info": "low",
+                }
+                issues.append(
+                    {
+                        "type": "security",
+                        "tool": "semgrep",
+                        "language": finding.get("language") or "unknown",
+                        "severity": severity_map.get(severity_raw, "medium"),
+                        "confidence": "medium",
+                        "file": finding.get("path"),
+                        "line": (finding.get("start") or {}).get("line"),
+                        "rule_id": finding.get("check_id"),
+                        "message": extra.get("message") or "Semgrep security finding",
+                        "cwe": (extra.get("metadata") or {}).get("cwe"),
+                    }
+                )
+
+            return issues
+        except FileNotFoundError:
+            raise RuntimeError("Semgrep is not installed. Install: pip install semgrep")
+        except json.JSONDecodeError:
+            raise RuntimeError("Failed to parse semgrep output")
+        except Exception as e:
+            raise RuntimeError(f"Semgrep scan failed: {e}")
+
     def run(self, repo_path: str, language: Optional[str] = None) -> List[Dict]:
         """
         Run security scan on the repository.
@@ -264,20 +327,37 @@ class SecurityAnalyzer:
             language = self._detect_language(repo_path)
         
         language = language.lower()
-        
+
+        issues: List[Dict] = []
+
         if language == "python":
-            return self._scan_python(repo_path)
+            issues.extend(self._scan_python(repo_path))
         elif language == "java":
-            return self._scan_java(repo_path)
+            issues.extend(self._scan_java(repo_path))
         else:
-            # Try Python as fallback, or return empty if unsupported
-            if language not in ["python", "java"]:
-                return [{
+            issues.append({
+                "type": "security",
+                "language": language,
+                "severity": "info",
+                "message": (
+                    f"Primary language '{language}' has no dedicated scanner. "
+                    "Running Semgrep cross-language rules if available."
+                ),
+                "file": None,
+                "line": None
+            })
+
+        if self.enable_semgrep:
+            try:
+                issues.extend(self._scan_semgrep(repo_path))
+            except Exception as e:
+                issues.append({
                     "type": "security",
-                    "language": language,
+                    "tool": "semgrep",
                     "severity": "info",
-                    "message": f"Security scanning not yet supported for {language}. Supported languages: Python (Bandit), Java (SpotBugs)",
+                    "message": f"Semgrep unavailable or failed: {e}",
                     "file": None,
-                    "line": None
-                }]
-            return []
+                    "line": None,
+                })
+
+        return issues

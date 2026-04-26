@@ -19,6 +19,8 @@ langchain-openai>=0.2.0
 
 # --- Security Scanning (Python) ---
 bandit>=1.7.0
+semgrep>=1.90.0
+checkov>=3.2.0
 pip-licenses>=4.3.0
 
 # --- RAG / Vector Database ---

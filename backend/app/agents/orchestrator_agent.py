@@ -9,6 +9,9 @@ from app.agents.security_agent import SecurityAnalyzer
 from app.agents.oss_agent import OSSAnalyzer
 from app.agents.change_agent import ChangeAnalyzer
 from app.agents.deprecation_agent import DeprecationAnalyzer
+from app.agents.secrets_agent import SecretsAnalyzer
+from app.agents.infra_agent import InfraAnalyzer
+from app.agents.container_agent import ContainerAnalyzer
 from app.agents.github_agent import GitHubAnalyzer
 from app.services.llm_service import LLMService
 
@@ -30,6 +33,9 @@ class OrchestratorAgent:
         self.oss_analyzer = OSSAnalyzer()
         self.change_analyzer = ChangeAnalyzer()
         self.deprecation_analyzer = DeprecationAnalyzer()
+        self.secrets_analyzer = SecretsAnalyzer()
+        self.infra_analyzer = InfraAnalyzer()
+        self.container_analyzer = ContainerAnalyzer()
         self.github_analyzer = GitHubAnalyzer()
 
     def decide_agents(
@@ -43,7 +49,16 @@ class OrchestratorAgent:
         irrelevant agents — never to block.
         """
         # Fast path: always honour the explicit scan_types
-        return [s for s in scan_types if s in ("security", "oss", "change", "deprecation")]
+        supported = (
+            "security",
+            "oss",
+            "change",
+            "deprecation",
+            "secrets",
+            "infra",
+            "container",
+        )
+        return [s for s in scan_types if s in supported]
 
     def run_agents(
         self,
@@ -64,6 +79,12 @@ class OrchestratorAgent:
                     results["change"] = self.change_analyzer.run(repo_path)
                 elif agent_name == "deprecation":
                     results["deprecation"] = self.deprecation_analyzer.run(repo_path)
+                elif agent_name == "secrets":
+                    results["secrets"] = self.secrets_analyzer.run(repo_path)
+                elif agent_name == "infra":
+                    results["infra"] = self.infra_analyzer.run(repo_path)
+                elif agent_name == "container":
+                    results["container"] = self.container_analyzer.run(repo_path)
                 if on_agent_completed is not None:
                     on_agent_completed(agent_name, results.get(agent_name, []))
             except Exception as e:
