@@ -7,6 +7,7 @@ Supported providers:
   - groq        : Free cloud inference via Groq (fastest free option)
   - openai      : OpenAI or any OpenAI-compatible API
   - huggingface : Hugging Face Inference API
+  - bedrock     : AWS Bedrock models via boto3
 """
 import os
 import json
@@ -14,6 +15,8 @@ import time
 import requests
 from typing import Optional, Dict, Any, List
 from enum import Enum
+import boto3
+from botocore.exceptions import BotoCoreError, ClientError
 from app.services.langsmith_service import LangSmithTracer
 
 
@@ -23,6 +26,7 @@ class LLMProvider(str, Enum):
     GROQ = "groq"
     OPENAI = "openai"
     HUGGINGFACE = "huggingface"
+    BEDROCK = "bedrock"
 
     # Providers that use the OpenAI chat completions format
     _OPENAI_COMPAT = {"groq", "openai"}
@@ -43,6 +47,7 @@ class LLMService:
         "groq": "llama-3.1-8b-instant",
         "openai": "gpt-4o-mini",
         "huggingface": "mistralai/Mistral-7B-Instruct-v0.2",
+        "bedrock": "anthropic.claude-3-5-sonnet-20240620-v1:0",
     }
 
     _DEFAULT_URLS = {
@@ -50,6 +55,7 @@ class LLMService:
         "groq": "https://api.groq.com/openai/v1",
         "openai": "https://api.openai.com/v1",
         "huggingface": "https://router.huggingface.co",
+        "bedrock": "",
     }
 
     def __init__(
@@ -98,8 +104,30 @@ class LLMService:
             self.base_url = base_url or os.getenv("HF_BASE_URL", self._DEFAULT_URLS["huggingface"])
             self._available = self.api_key is not None
 
+        elif self.provider == LLMProvider.BEDROCK.value:
+            self.model = model or os.getenv("BEDROCK_MODEL_ID", self._DEFAULT_MODELS["bedrock"])
+            self.region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION") or "us-west-2"
+            self.bedrock_inference_profile_arn = os.getenv("BEDROCK_INFERENCE_PROFILE_ARN")
+            self.api_key = None
+            self.base_url = ""
+            self._available = self._check_bedrock_available()
+
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
+
+    def _check_bedrock_available(self) -> bool:
+        """
+        Check whether AWS credentials and Bedrock runtime access are available.
+        """
+        try:
+            sts_client = boto3.client("sts", region_name=self.region)
+            sts_client.get_caller_identity()
+            # Build runtime client lazily and validate credentials/model access with converse.
+            self._bedrock_client = boto3.client("bedrock-runtime", region_name=self.region)
+            return True
+        except Exception as e:
+            print(f"Bedrock is not available: {e}")
+            return False
 
     def _check_ollama_available(self) -> bool:
         """Check if Ollama is reachable and the configured model exists."""
@@ -166,6 +194,9 @@ class LLMService:
         if self.provider == LLMProvider.OLLAMA.value:
             config["num_ctx"] = self.num_ctx
             config["base_url"] = self.base_url
+        if self.provider == LLMProvider.BEDROCK.value:
+            config["region"] = self.region
+            config["inference_profile_arn"] = self.bedrock_inference_profile_arn
         return config
 
     def _generate_ollama(
@@ -398,6 +429,78 @@ class LLMService:
         except requests.exceptions.RequestException as e:
             raise RuntimeError(f"HuggingFace API request failed: {str(e)}")
 
+    def _generate_bedrock(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """
+        Generate text using AWS Bedrock Runtime converse API.
+        """
+        effective_max_tokens = max_tokens or self.max_tokens
+        messages = [{"role": "user", "content": [{"text": prompt}]}]
+        system = [{"text": system_prompt}] if system_prompt else []
+
+        converse_kwargs: Dict[str, Any] = {
+            "modelId": self.model,
+            "messages": messages,
+            "inferenceConfig": {
+                "temperature": temperature,
+                "maxTokens": effective_max_tokens,
+            },
+        }
+        if system:
+            converse_kwargs["system"] = system
+        if self.bedrock_inference_profile_arn:
+            converse_kwargs["inferenceProfileArn"] = self.bedrock_inference_profile_arn
+
+        attempts = max(1, self.retry_max_attempts)
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self._bedrock_client.converse(**converse_kwargs)
+                output = response.get("output", {})
+                message = output.get("message", {})
+                content_blocks = message.get("content", [])
+                text_parts: List[str] = []
+                for block in content_blocks:
+                    text = block.get("text")
+                    if text:
+                        text_parts.append(text)
+                result = "\n".join(text_parts).strip()
+                if not result:
+                    raise RuntimeError("Bedrock returned an empty response.")
+                return result
+            except ClientError as e:
+                err_code = (e.response.get("Error", {}) or {}).get("Code", "Unknown")
+                retryable = err_code in {
+                    "ThrottlingException",
+                    "TooManyRequestsException",
+                    "ServiceUnavailableException",
+                    "InternalServerException",
+                    "ModelTimeoutException",
+                }
+                if retryable and attempt < attempts:
+                    wait_s = self.retry_backoff_seconds * attempt
+                    print(
+                        f"bedrock client error ({err_code}). "
+                        f"Retrying in {wait_s:.1f}s (attempt {attempt}/{attempts})"
+                    )
+                    time.sleep(min(wait_s, 30.0))
+                    continue
+                raise RuntimeError(f"Bedrock API request failed ({err_code}): {e}")
+            except BotoCoreError as e:
+                if attempt < attempts:
+                    wait_s = self.retry_backoff_seconds * attempt
+                    print(
+                        f"bedrock transport error. "
+                        f"Retrying in {wait_s:.1f}s (attempt {attempt}/{attempts}): {e}"
+                    )
+                    time.sleep(min(wait_s, 30.0))
+                    continue
+                raise RuntimeError(f"Bedrock transport failed: {e}")
+
     def generate(
         self, 
         prompt: str, 
@@ -494,6 +597,8 @@ class LLMService:
                 output_text = self._generate_openai_compat(prompt, system_prompt, temperature, max_tokens)
             elif self.provider == LLMProvider.HUGGINGFACE.value:
                 output_text = self._generate_huggingface(prompt, system_prompt, temperature, max_tokens)
+            elif self.provider == LLMProvider.BEDROCK.value:
+                output_text = self._generate_bedrock(prompt, system_prompt, temperature, max_tokens)
             else:
                 raise ValueError(f"Unsupported provider: {self.provider}")
 
