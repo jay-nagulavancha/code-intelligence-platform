@@ -284,7 +284,7 @@ def main():
     )
     parser.add_argument(
         "--scan-types", nargs="+", default=["security", "oss"],
-        help="Scan types to run (default: security oss)"
+        help="Scan types to run (default: security oss). Supported: security oss change deprecation secrets infra container"
     )
     parser.add_argument(
         "--create-pr", action="store_true",

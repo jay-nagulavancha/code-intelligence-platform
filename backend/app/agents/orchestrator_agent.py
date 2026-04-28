@@ -5,12 +5,19 @@ Gracefully falls back when LLM is unavailable or slow.
 """
 from typing import List, Dict, Optional, Any, Callable
 import json
+import logging
 from app.agents.security_agent import SecurityAnalyzer
 from app.agents.oss_agent import OSSAnalyzer
 from app.agents.change_agent import ChangeAnalyzer
 from app.agents.deprecation_agent import DeprecationAnalyzer
+from app.agents.secrets_agent import SecretsAnalyzer
+from app.agents.infra_agent import InfraAnalyzer
+from app.agents.container_agent import ContainerAnalyzer
 from app.agents.github_agent import GitHubAnalyzer
 from app.services.llm_service import LLMService
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorAgent:
@@ -30,6 +37,9 @@ class OrchestratorAgent:
         self.oss_analyzer = OSSAnalyzer()
         self.change_analyzer = ChangeAnalyzer()
         self.deprecation_analyzer = DeprecationAnalyzer()
+        self.secrets_analyzer = SecretsAnalyzer()
+        self.infra_analyzer = InfraAnalyzer()
+        self.container_analyzer = ContainerAnalyzer()
         self.github_analyzer = GitHubAnalyzer()
 
     def decide_agents(
@@ -43,7 +53,16 @@ class OrchestratorAgent:
         irrelevant agents — never to block.
         """
         # Fast path: always honour the explicit scan_types
-        return [s for s in scan_types if s in ("security", "oss", "change", "deprecation")]
+        supported = (
+            "security",
+            "oss",
+            "change",
+            "deprecation",
+            "secrets",
+            "infra",
+            "container",
+        )
+        return [s for s in scan_types if s in supported]
 
     def run_agents(
         self,
@@ -53,9 +72,24 @@ class OrchestratorAgent:
     ) -> Dict[str, List[Dict]]:
         """Execute the specified agents and collect their outputs."""
         results = {}
+        tool_map = {
+            "security": ["bandit", "semgrep", "spotbugs"],
+            "oss": ["dependency-check", "pip-licenses"],
+            "change": ["git-diff"],
+            "deprecation": ["ast-deprecation-scanner"],
+            "secrets": ["gitleaks"],
+            "infra": ["checkov"],
+            "container": ["trivy"],
+        }
 
         for agent_name in agents_to_run:
             try:
+                tools = tool_map.get(agent_name, [])
+                logger.info(
+                    "Running analyzer '%s' with tool(s): %s",
+                    agent_name,
+                    ", ".join(tools) if tools else "unknown",
+                )
                 if agent_name == "security":
                     results["security"] = self.security_analyzer.run(repo_path)
                 elif agent_name == "oss":
@@ -64,6 +98,12 @@ class OrchestratorAgent:
                     results["change"] = self.change_analyzer.run(repo_path)
                 elif agent_name == "deprecation":
                     results["deprecation"] = self.deprecation_analyzer.run(repo_path)
+                elif agent_name == "secrets":
+                    results["secrets"] = self.secrets_analyzer.run(repo_path)
+                elif agent_name == "infra":
+                    results["infra"] = self.infra_analyzer.run(repo_path)
+                elif agent_name == "container":
+                    results["container"] = self.container_analyzer.run(repo_path)
                 if on_agent_completed is not None:
                     on_agent_completed(agent_name, results.get(agent_name, []))
             except Exception as e:
