@@ -5,6 +5,7 @@ Gracefully falls back when LLM is unavailable or slow.
 """
 from typing import List, Dict, Optional, Any, Callable
 import json
+import logging
 from app.agents.security_agent import SecurityAnalyzer
 from app.agents.oss_agent import OSSAnalyzer
 from app.agents.change_agent import ChangeAnalyzer
@@ -14,6 +15,9 @@ from app.agents.infra_agent import InfraAnalyzer
 from app.agents.container_agent import ContainerAnalyzer
 from app.agents.github_agent import GitHubAnalyzer
 from app.services.llm_service import LLMService
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorAgent:
@@ -68,9 +72,24 @@ class OrchestratorAgent:
     ) -> Dict[str, List[Dict]]:
         """Execute the specified agents and collect their outputs."""
         results = {}
+        tool_map = {
+            "security": ["bandit", "semgrep", "spotbugs"],
+            "oss": ["dependency-check", "pip-licenses"],
+            "change": ["git-diff"],
+            "deprecation": ["ast-deprecation-scanner"],
+            "secrets": ["gitleaks"],
+            "infra": ["checkov"],
+            "container": ["trivy"],
+        }
 
         for agent_name in agents_to_run:
             try:
+                tools = tool_map.get(agent_name, [])
+                logger.info(
+                    "Running analyzer '%s' with tool(s): %s",
+                    agent_name,
+                    ", ".join(tools) if tools else "unknown",
+                )
                 if agent_name == "security":
                     results["security"] = self.security_analyzer.run(repo_path)
                 elif agent_name == "oss":
