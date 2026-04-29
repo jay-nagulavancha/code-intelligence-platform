@@ -318,6 +318,10 @@ class LLMService:
         # Conservative default (~6k tokens). Groq free tier often rejects bodies
         # well below the model's nominal context window, so keep this low.
         self.prompt_max_chars = int(os.getenv("LLM_PROMPT_MAX_CHARS", "24000"))
+        # Per-file budget when embedding source/test content into a prompt
+        # (used by pr_agent's nondeterministic remediation + test generation).
+        # Keeps one large file from blowing the whole prompt budget.
+        self.prompt_file_max_chars = int(os.getenv("LLM_PROMPT_FILE_MAX_CHARS", "12000"))
         # Optional LangChain path (mainly for OpenAI-compatible providers)
         self.use_langchain = os.getenv("LLM_USE_LANGCHAIN", "false").lower() in (
             "1", "true", "yes", "on"
@@ -542,6 +546,29 @@ class LLMService:
             return len(enc.encode(text))
         except Exception:
             return max(1, len(text) // 4)
+
+    def truncate_code_blob(self, text: str, max_chars: Optional[int] = None) -> str:
+        """
+        Bound a single code blob (source file, test file, etc.) before embedding
+        it in a prompt.
+
+        Keeps the head and the tail of the file (where imports, class headers,
+        and closing braces live) and replaces the middle with a marker. This
+        preserves more useful context for code than blunt tail truncation.
+        """
+        if not isinstance(text, str):
+            text = str(text)
+        max_chars = max_chars if max_chars is not None else self.prompt_file_max_chars
+        if max_chars <= 0 or len(text) <= max_chars:
+            return text
+
+        marker = "\n\n…(file truncated to fit prompt budget)…\n\n"
+        keep = max_chars - len(marker)
+        if keep <= 0:
+            return text[:max_chars]
+        head = keep // 2
+        tail = keep - head
+        return text[:head] + marker + text[-tail:]
 
     def _fit_prompt(
         self,
@@ -953,6 +980,24 @@ class LLMService:
                 f"LLM service is not available. "
                 f"Provider: {self.provider}. "
                 f"Please check your configuration."
+            )
+
+        # Defensive top-level guard. Some callers build their own prompts
+        # (pr_agent embeds whole source files, etc.) and don't go through
+        # the per-helper budgeting in _fit_prompt. If the rendered prompt
+        # exceeds prompt_max_chars, tail-preserve it: the closing instruction
+        # block in our prompt templates lives at the end and matters most
+        # for steering the model. This catches every caller — present and
+        # future — before the request hits the provider.
+        if isinstance(prompt, str) and len(prompt) > self.prompt_max_chars:
+            original_chars = len(prompt)
+            marker = "…(prompt head truncated to fit LLM_PROMPT_MAX_CHARS budget)\n"
+            keep = max(1, self.prompt_max_chars - len(marker))
+            prompt = marker + prompt[-keep:]
+            print(
+                f"LLMService.generate: prompt {original_chars} chars exceeded "
+                f"LLM_PROMPT_MAX_CHARS={self.prompt_max_chars}; tail-preserved "
+                f"to {len(prompt)} chars."
             )
 
         io_trace = getattr(self.tracer, "record_component_io", None)

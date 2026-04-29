@@ -134,6 +134,7 @@ class PRAgent:
         attempt: int,
     ) -> str:
         compact_issues = issues[:5]
+        bounded_content = self.llm_service.truncate_code_blob(original_content)
         prompt = f"""You are fixing code issues in a single file.
 
 File path: {file_path}
@@ -144,7 +145,7 @@ Issues to fix (JSON):
 
 Current file content:
 ```text
-{original_content}
+{bounded_content}
 ```
 
 Return ONLY the complete updated file content.
@@ -311,6 +312,12 @@ Preserve unrelated logic.
         attempt: int,
     ) -> str:
         compact_issues = issues[:5]
+        # Both source and existing test content are embedded; budget each
+        # independently so a huge source file can't crowd out the test file
+        # context entirely.
+        per_file_budget = max(2000, self.llm_service.prompt_file_max_chars // 2)
+        bounded_source = self.llm_service.truncate_code_blob(source_content, per_file_budget)
+        bounded_test = self.llm_service.truncate_code_blob(existing_test_content, per_file_budget)
         prompt = f"""You are generating unit tests for a remediated source file.
 
 Source file: {source_file}
@@ -322,12 +329,12 @@ Related issues (JSON):
 
 Updated source content:
 ```text
-{source_content}
+{bounded_source}
 ```
 
 Existing test content (may be empty):
 ```text
-{existing_test_content}
+{bounded_test}
 ```
 
 Return ONLY the complete test file content.

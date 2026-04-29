@@ -177,7 +177,19 @@ mitigates this with three layers — all on by default and tunable via env:
 2. **Hard prompt-size cap.** After compaction, the rendered prompt must fit in
    `LLM_PROMPT_MAX_CHARS`. If it doesn't, the service halves `top_k` and then
    `max_str_len` until it does (or falls back to a 5-item / 80-char minimum).
-3. **413 / context-length retry.** If the provider still rejects the request
+3. **Top-level guard inside `LLMService.generate()`.** Some callers build their
+   own prompts and call `generate()` directly (for example, the PR remediation
+   agent embeds full source files). Any prompt longer than
+   `LLM_PROMPT_MAX_CHARS` is tail-preserved (the closing instructions in our
+   templates live at the end and matter most for steering the model) with a
+   warning log. This protects every caller — present and future.
+4. **Per-file blob truncation.** When a prompt embeds raw file content
+   (PR remediation, test generation), each file is bounded by
+   `LLM_PROMPT_FILE_MAX_CHARS` via `LLMService.truncate_code_blob()`. The head
+   and tail of the file are kept (where imports, class headers, and closing
+   braces live) with a marker in the middle, preserving more useful context
+   than blunt tail truncation.
+5. **413 / context-length retry.** If the provider still rejects the request
    (different model, lower limit than expected), `_generate_openai_compat`
    retries once with the user message tail-truncated to half its length before
    surfacing a clear error.
@@ -189,6 +201,7 @@ mitigates this with three layers — all on by default and tunable via env:
 | `LLM_PROMPT_MAX_ITEMS` | `25` | Lower (10) for Groq free tier; raise (50–100) for gpt-4o-mini / Bedrock Claude. |
 | `LLM_PROMPT_MAX_STR_LEN` | `400` | Lower (200) when most findings have huge descriptions; raise (800) on high-context models. |
 | `LLM_PROMPT_MAX_CHARS` | `24000` (~6k tokens) | Raise to `60000` for 32k-context models, `120000` for 128k+. |
+| `LLM_PROMPT_FILE_MAX_CHARS` | `12000` | Per-file budget when PR remediation embeds source/test files. Should be roughly half of `LLM_PROMPT_MAX_CHARS` so the prompt template + issues still fit. |
 
 ### Optional: accurate token counting
 
