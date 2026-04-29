@@ -8,6 +8,7 @@ import subprocess
 import json
 import os
 import xml.etree.ElementTree as ET
+import shutil
 from typing import List, Dict, Optional
 from app.utils.project_detector import ProjectDetector
 from app.utils.project_builder import ProjectBuilder
@@ -93,29 +94,19 @@ class OSSAnalyzer:
                 }]
 
         try:
-            # Check if dependency-check is available
-            try:
-                result = subprocess.run(
-                    ["dependency-check", "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
+            # Resolve available dependency-check executable.
+            dep_check_bin = (
+                shutil.which("dependency-check")
+                or shutil.which("dependency-check.sh")
+                or "/usr/local/bin/dependency-check.sh"
+                or "/opt/homebrew/bin/dependency-check.sh"
+            )
+            if not dep_check_bin or not os.path.exists(dep_check_bin):
+                raise RuntimeError(
+                    "OWASP Dependency-Check is not installed. "
+                    "Install from: https://owasp.org/www-project-dependency-check/ "
+                    "macOS: brew install dependency-check"
                 )
-            except FileNotFoundError:
-                # Try alternative paths
-                dep_check_paths = [
-                    "/usr/local/bin/dependency-check.sh",
-                    "/opt/homebrew/bin/dependency-check.sh",
-                    os.path.expanduser("~/dependency-check/bin/dependency-check.sh"),
-                ]
-                dep_check_found = any(os.path.exists(path) for path in dep_check_paths)
-                
-                if not dep_check_found:
-                    raise RuntimeError(
-                        "OWASP Dependency-Check is not installed. "
-                        "Install from: https://owasp.org/www-project-dependency-check/ "
-                        "macOS: brew install dependency-check"
-                    )
             
             # Create output directory
             output_dir = os.path.join(repo_path, ".dependency-check-output")
@@ -137,7 +128,7 @@ class OSSAnalyzer:
             
             # Run dependency-check
             dep_check_cmd = [
-                "dependency-check.sh" if os.name != 'nt' else "dependency-check.bat",
+                dep_check_bin if os.name != 'nt' else "dependency-check.bat",
                 "--project", "Maven Project",
                 "--scan", repo_path,
                 "--format", "JSON",
@@ -230,9 +221,8 @@ class OSSAnalyzer:
             
             # Cleanup
             try:
-                import shutil
                 shutil.rmtree(output_dir, ignore_errors=True)
-            except:
+            except Exception:
                 pass
             
             return issues
