@@ -14,7 +14,7 @@ from app.agents.secrets_agent import SecretsAnalyzer
 from app.agents.infra_agent import InfraAnalyzer
 from app.agents.container_agent import ContainerAnalyzer
 from app.agents.github_agent import GitHubAnalyzer
-from app.services.llm_service import LLMService
+from app.services.llm_service import LLMService, extract_json_from_llm
 
 
 logger = logging.getLogger(__name__)
@@ -179,11 +179,17 @@ Project: {json.dumps(ctx, indent=2, default=str)}
 Results (showing up to 3 issues per agent):
 {json.dumps(compact, indent=2, default=str)}
 
-Respond with valid JSON only (no markdown, no explanation) containing exactly these keys:
+Respond with valid RFC 8259 JSON only (no markdown, no explanation) containing exactly these keys:
 {{"summary": "one paragraph of key findings",
   "critical_issues": ["issue description 1", "issue description 2"],
   "recommendations": ["recommendation 1", "recommendation 2"],
   "next_steps": ["next step 1", "next step 2"]}}
+
+Strict JSON rules:
+- Use double quotes for all keys and string values.
+- Escape any double quote inside a string value as \\".
+- Do not use trailing commas.
+- Do not wrap the JSON in markdown fences or commentary.
 Keep each list to 3 items maximum. Be concise."""
 
         try:
@@ -191,24 +197,18 @@ Keep each list to 3 items maximum. Be concise."""
                 prompt=prompt,
                 system_prompt=(
                     "You are an expert code analyst. "
-                    "Respond ONLY with valid compact JSON. No markdown fences. No extra text."
+                    "Respond ONLY with valid compact JSON. No markdown fences. No extra text. "
+                    "Escape any inner double quotes as \\\"."
                 ),
                 max_tokens=1024,
             )
-            # Extract JSON from response
-            text = response.strip()
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-
-            # Find the outermost JSON object in case the model added extra text
-            start = text.find("{")
-            end = text.rfind("}") + 1
-            if start != -1 and end > start:
-                text = text[start:end]
-
-            report = json.loads(text)
+            report = extract_json_from_llm(
+                response, expect="object", log_label="orchestrator.report"
+            )
+            if not isinstance(report, dict):
+                raise ValueError(
+                    f"Expected JSON object from LLM, got {type(report).__name__}"
+                )
             report["raw_issues"] = fallback["raw_issues"]
             report.setdefault("summary", fallback["summary"])
             return report

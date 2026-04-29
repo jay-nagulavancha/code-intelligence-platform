@@ -16,6 +16,7 @@ langsmith>=0.7.0,<0.8.0
 langchain>=0.3.0
 langchain-core>=0.3.0
 langchain-openai>=0.2.0
+json-repair>=0.30,<1.0
 
 # --- Security Scanning (Python) ---
 bandit>=1.7.0

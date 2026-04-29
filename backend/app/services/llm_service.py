@@ -11,13 +11,221 @@ Supported providers:
 """
 import os
 import json
+import sys
 import time
 import requests
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 from enum import Enum
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 from app.services.langsmith_service import LangSmithTracer
+
+try:
+    from json_repair import repair_json as _repair_json
+    _HAS_JSON_REPAIR = True
+except Exception:
+    _repair_json = None
+    _HAS_JSON_REPAIR = False
+
+
+def _basic_json_repair(text: str) -> str:
+    """
+    Best-effort JSON repair when the json_repair package is unavailable.
+    Handles a few high-frequency LLM mistakes:
+      - Trailing commas before } or ].
+      - Truncated input that ends inside a string/array/object: closes any
+        unterminated string and balances open brackets/braces.
+
+    This is intentionally conservative; for the full set of edge cases the
+    json_repair dependency does a much better job and is preferred.
+    """
+    s = text
+
+    in_string = False
+    escape = False
+    stack: List[str] = []
+    for ch in s:
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in "}]" and stack and stack[-1] == ch:
+            stack.pop()
+
+    if in_string:
+        s += '"'
+
+    while stack:
+        s += stack.pop()
+
+    out_chars: List[str] = []
+    in_string = False
+    escape = False
+    for i, ch in enumerate(s):
+        if escape:
+            out_chars.append(ch)
+            escape = False
+            continue
+        if ch == "\\":
+            out_chars.append(ch)
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            out_chars.append(ch)
+            continue
+        if not in_string and ch == ",":
+            j = i + 1
+            while j < len(s) and s[j].isspace():
+                j += 1
+            if j < len(s) and s[j] in "}]":
+                continue
+        out_chars.append(ch)
+    return "".join(out_chars)
+
+
+def _try_parse(candidate: str) -> Optional[Union[Dict[str, Any], List[Any]]]:
+    """Try strict json.loads, then json_repair, then a basic in-house repair."""
+    try:
+        return json.loads(candidate)
+    except Exception:
+        pass
+
+    if _HAS_JSON_REPAIR:
+        try:
+            repaired = _repair_json(candidate, return_objects=True)
+            if isinstance(repaired, (dict, list)):
+                return repaired
+            if isinstance(repaired, str) and repaired:
+                try:
+                    return json.loads(repaired)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    try:
+        return json.loads(_basic_json_repair(candidate))
+    except Exception:
+        return None
+
+
+def extract_json_from_llm(
+    text: str,
+    *,
+    expect: str = "any",
+    log_label: Optional[str] = None,
+) -> Union[Dict[str, Any], List[Any]]:
+    """
+    Extract and parse JSON from an LLM response, tolerating common LLM mistakes.
+
+    Handles:
+      - Markdown code fences (```json ... ``` or ``` ... ```).
+      - Leading/trailing prose around the JSON object/array.
+      - Truncated/unterminated strings, missing commas, trailing commas, and
+        unescaped inner quotes (best results when the json_repair package is
+        installed; degrades gracefully without it).
+
+    Args:
+        text: Raw LLM output.
+        expect: One of "object", "array", or "any". When "object" or "array"
+            is passed, only candidates of the requested top-level kind are
+            considered, so a malformed object never silently parses as an
+            inner array (or vice versa).
+        log_label: Optional label used when logging a debug snippet on failure.
+
+    Returns:
+        Parsed JSON value (dict or list).
+
+    Raises:
+        ValueError: If JSON cannot be recovered even after repair attempts.
+    """
+    if text is None:
+        raise ValueError("LLM response was None")
+
+    cleaned = text.strip()
+
+    if "```json" in cleaned:
+        cleaned = cleaned.split("```json", 1)[1]
+        if "```" in cleaned:
+            cleaned = cleaned.split("```", 1)[0]
+        cleaned = cleaned.strip()
+    elif "```" in cleaned:
+        parts = cleaned.split("```")
+        if len(parts) >= 3:
+            cleaned = parts[1].strip()
+
+    obj_start = cleaned.find("{")
+    obj_end = cleaned.rfind("}")
+    arr_start = cleaned.find("[")
+    arr_end = cleaned.rfind("]")
+
+    object_candidate = (
+        cleaned[obj_start : obj_end + 1]
+        if obj_start != -1 and obj_end > obj_start
+        else None
+    )
+    array_candidate = (
+        cleaned[arr_start : arr_end + 1]
+        if arr_start != -1 and arr_end > arr_start
+        else None
+    )
+
+    if expect == "object":
+        candidates = [c for c in (object_candidate, cleaned) if c]
+        accept_kind = (dict,)
+    elif expect == "array":
+        candidates = [c for c in (array_candidate, cleaned) if c]
+        accept_kind = (list,)
+    else:
+        prefer_arr = arr_start != -1 and (obj_start == -1 or arr_start < obj_start)
+        first_two = (
+            (array_candidate, object_candidate)
+            if prefer_arr
+            else (object_candidate, array_candidate)
+        )
+        candidates = [c for c in (*first_two, cleaned) if c]
+        accept_kind = (dict, list)
+
+    deduped: List[str] = []
+    for c in candidates:
+        if c not in deduped:
+            deduped.append(c)
+
+    for candidate in deduped:
+        parsed = _try_parse(candidate)
+        if isinstance(parsed, accept_kind):
+            return parsed
+
+    snippet_head = (text or "")[:500]
+    snippet_tail = (text or "")[-500:] if len(text or "") > 500 else ""
+    label = f" ({log_label})" if log_label else ""
+    install_hint = (
+        ""
+        if _HAS_JSON_REPAIR
+        else " (hint: install `json-repair` for better recovery from truncated/malformed LLM JSON)"
+    )
+    print(
+        f"[llm-json] failed to parse JSON{label}{install_hint}\n"
+        f"[llm-json] response head: {snippet_head!r}\n"
+        f"[llm-json] response tail: {snippet_tail!r}",
+        file=sys.stderr,
+        flush=True,
+    )
+    raise ValueError(
+        f"Could not parse JSON from LLM response{install_hint}"
+    )
 
 
 class LLMProvider(str, Enum):
@@ -68,6 +276,10 @@ class LLMService:
     ):
         # Global settings
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1024"))
+        # Higher ceiling for prompts that demand JSON output (vulnerability
+        # fixes, deprecation summaries, etc.) so Bedrock/Claude do not truncate
+        # mid-string and produce unparseable JSON. Overridable per env.
+        self.json_max_tokens = int(os.getenv("LLM_JSON_MAX_TOKENS", "4096"))
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))
         self.retry_max_attempts = int(os.getenv("LLM_RETRY_MAX_ATTEMPTS", "3"))
         self.retry_backoff_seconds = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2.0"))
@@ -697,22 +909,37 @@ For each vulnerability, provide:
 3. Best practices to prevent similar issues
 4. Priority level (critical, high, medium, low)
 
-Respond in JSON format with an array of suggestions."""
+Respond with a single valid RFC 8259 JSON array of suggestion objects.
 
-        system_prompt = "You are a security expert. Provide actionable, specific fixes for security vulnerabilities."
+Strict JSON rules:
+- Use double quotes for all keys and string values.
+- Escape any double quote inside a string value as \\".
+- Do not use trailing commas.
+- Do not wrap the JSON in markdown fences or add commentary before or after."""
 
+        system_prompt = (
+            "You are a security expert. Provide actionable, specific fixes for "
+            "security vulnerabilities. Respond ONLY with a valid JSON array. "
+            "Escape any inner double quotes as \\\"."
+        )
+
+        effective_max_tokens = max_tokens or max(self.max_tokens, self.json_max_tokens)
         try:
-            response = self.generate(prompt=prompt, system_prompt=system_prompt, max_tokens=max_tokens)
-            # Try to extract JSON from response (in case model adds extra text)
-            response = response.strip()
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0].strip()
-            
-            suggestions = json.loads(response)
+            response = self.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_tokens=effective_max_tokens,
+            )
+            suggestions = extract_json_from_llm(
+                response, expect="array", log_label="suggest_vulnerability_fixes"
+            )
             if isinstance(suggestions, list):
                 return suggestions
+            if isinstance(suggestions, dict):
+                for key in ("suggestions", "fixes", "items", "data"):
+                    value = suggestions.get(key)
+                    if isinstance(value, list):
+                        return value
             return []
         except Exception as e:
             print(f"Failed to parse vulnerability suggestions: {e}")
@@ -745,21 +972,36 @@ Provide:
 4. Priority for addressing each issue
 5. Estimated effort for fixes
 
-Respond in JSON format."""
+Respond with a single valid RFC 8259 JSON object.
 
-        system_prompt = "You are a code modernization expert. Help teams migrate from deprecated code patterns to modern alternatives."
+Strict JSON rules:
+- Use double quotes for all keys and string values.
+- Escape any double quote inside a string value as \\".
+- Do not use trailing commas.
+- Do not wrap the JSON in markdown fences or add commentary before or after."""
 
+        system_prompt = (
+            "You are a code modernization expert. Help teams migrate from "
+            "deprecated code patterns to modern alternatives. Respond ONLY "
+            "with a valid JSON object. Escape any inner double quotes as \\\"."
+        )
+
+        effective_max_tokens = max_tokens or max(self.max_tokens, self.json_max_tokens)
         try:
-            response = self.generate(prompt=prompt, system_prompt=system_prompt, max_tokens=max_tokens)
-            # Try to extract JSON from response
-            response = response.strip()
-            if "```json" in response:
-                response = response.split("```json")[1].split("```")[0].strip()
-            elif "```" in response:
-                response = response.split("```")[1].split("```")[0].strip()
-            
-            summary = json.loads(response)
-            return summary
+            response = self.generate(
+                prompt=prompt,
+                system_prompt=system_prompt,
+                max_tokens=effective_max_tokens,
+            )
+            summary = extract_json_from_llm(
+                response, expect="object", log_label="summarize_deprecation_issues"
+            )
+            if isinstance(summary, dict):
+                return summary
+            return {
+                "summary": f"Found {len(deprecation_issues)} deprecation issues",
+                "recommendations": [],
+            }
         except Exception as e:
             print(f"Failed to parse deprecation summary: {e}")
             return {
