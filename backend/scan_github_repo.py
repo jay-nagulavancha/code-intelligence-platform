@@ -2,10 +2,13 @@
 Full-pipeline GitHub repository scanner.
 
 Usage:
-    python scan_github_repo.py <owner> <repo> [--no-issues] [--no-rag] [--create-pr]
+    python scan_github_repo.py <owner> <repo> [--scan-types TYPE ...] [--no-issues] [--no-rag] [--create-pr]
 
 Example:
     python scan_github_repo.py jay-nagulavancha spring-boot-spring-security-jwt-authentication
+
+Scan types:
+    python scan_github_repo.py --help   # lists all supported --scan-types
 """
 import os
 import sys
@@ -31,6 +34,22 @@ from app.services.scan_service import ScanService
 from app.services.llm_service import LLMService
 from app.services.rag_service import RAGService
 from app.services.mcp_github_service import MCPGitHubService
+
+
+SCAN_TYPES_EPILOG = """
+Supported scan types (--scan-types; pass one or more keywords; default: security oss):
+
+  security       Bandit (Python), Semgrep, SpotBugs (Java bytecode)
+  oss            OWASP Dependency-Check (Maven/Java), pip-licenses (Python)
+  change         Git history / diff-oriented analysis (git-diff)
+  deprecation    AST deprecation scanner (ast-deprecation-scanner)
+  secrets        Gitleaks (leaked secrets in files / history)
+  infra          Checkov (IaC and cloud misconfiguration)
+  container      Trivy (container image and filesystem CVEs)
+
+Installing host tools (bandit, dependency-check, spotbugs, semgrep, …) is required
+for each analyzer you enable; see backend documentation.
+""".strip()
 
 
 def print_header(owner: str, repo: str):
@@ -266,7 +285,9 @@ def save_results(owner: str, repo: str, result: dict):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Code Intelligence Platform — Full Scan Pipeline"
+        description="Code Intelligence Platform — Full Scan Pipeline",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=SCAN_TYPES_EPILOG,
     )
     parser.add_argument("owner", help="GitHub repository owner")
     parser.add_argument("repo", help="GitHub repository name")
@@ -283,8 +304,11 @@ def main():
         help="Skip LLM enhancement (faster, no AI-generated suggestions)"
     )
     parser.add_argument(
-        "--scan-types", nargs="+", default=["security", "oss"],
-        help="Scan types to run (default: security oss). Supported: security oss change deprecation secrets infra container"
+        "--scan-types",
+        nargs="+",
+        metavar="TYPE",
+        default=["security", "oss"],
+        help="Which analyzers to run (see Supported scan types below; default: security oss)",
     )
     parser.add_argument(
         "--create-pr", action="store_true",
