@@ -158,6 +158,57 @@ Notes:
 - If LangChain path fails at runtime, the service automatically falls back to direct HTTP calls.
 - This keeps behavior stable while enabling LangChain-based model wrappers.
 
+## Prompt Size Budgeting (avoiding 413 / context_length_exceeded)
+
+Scans can produce hundreds of findings, and OWASP Dependency-Check reports can
+embed very large CVE descriptions and reference link arrays. Free-tier
+providers (Groq) reject oversize requests with `413 Payload Too Large`, and
+self-hosted models can fail with `context_length_exceeded`. The LLM service
+mitigates this with three layers — all on by default and tunable via env:
+
+1. **Per-call compaction.** `generate_release_notes`,
+   `suggest_vulnerability_fixes`, and `summarize_deprecation_issues`
+   automatically:
+   - sort findings by severity (critical → info),
+   - keep only the top `LLM_PROMPT_MAX_ITEMS` items,
+   - strip heavy keys (`description`, `references`, `cvss_v2`, `cvss_v3`,
+     `code`, `raw_xml`, `historical_context`, `stack_trace`, `evidence`),
+   - truncate each remaining string field to `LLM_PROMPT_MAX_STR_LEN` chars.
+2. **Hard prompt-size cap.** After compaction, the rendered prompt must fit in
+   `LLM_PROMPT_MAX_CHARS`. If it doesn't, the service halves `top_k` and then
+   `max_str_len` until it does (or falls back to a 5-item / 80-char minimum).
+3. **413 / context-length retry.** If the provider still rejects the request
+   (different model, lower limit than expected), `_generate_openai_compat`
+   retries once with the user message tail-truncated to half its length before
+   surfacing a clear error.
+
+### Tuning
+
+| Variable | Default | When to change |
+| --- | --- | --- |
+| `LLM_PROMPT_MAX_ITEMS` | `25` | Lower (10) for Groq free tier; raise (50–100) for gpt-4o-mini / Bedrock Claude. |
+| `LLM_PROMPT_MAX_STR_LEN` | `400` | Lower (200) when most findings have huge descriptions; raise (800) on high-context models. |
+| `LLM_PROMPT_MAX_CHARS` | `24000` (~6k tokens) | Raise to `60000` for 32k-context models, `120000` for 128k+. |
+
+### Optional: accurate token counting
+
+By default, prompt size is measured in characters (≈ `chars / 4` tokens). For
+exact counts, install `tiktoken`:
+
+```bash
+pip install tiktoken
+```
+
+The service will pick it up automatically when present; no config change
+needed.
+
+### What the raw scan output preserves
+
+Compaction only affects the **prompt sent to the LLM**. The full, unmodified
+scan output is still available in `scan_result["raw_results"]` and the
+generated report's `raw_issues`, so downstream consumers (PR creation, RAG
+storage, GitHub Issues) work on the complete data set.
+
 ## Model Recommendations
 
 ### For Development (Ollama):

@@ -266,6 +266,32 @@ class LLMService:
         "bedrock": "",
     }
 
+    # Heavy fields stripped from finding/dependency dicts before they're sent
+    # to the LLM. Keeps prompts small without losing the identifying info the
+    # model needs to reason about each item.
+    _DEFAULT_HEAVY_KEYS = (
+        "description",
+        "references",
+        "cvss_v2",
+        "cvss_v3",
+        "code",
+        "raw_xml",
+        "historical_context",
+        "stack_trace",
+        "evidence",
+    )
+
+    # Severity ordering used by _compact when picking top-K items.
+    _SEVERITY_ORDER = {
+        "critical": 0,
+        "high": 1,
+        "medium": 2,
+        "low": 3,
+        "info": 4,
+        "unknown": 5,
+        "": 6,
+    }
+
     def __init__(
         self,
         provider: Optional[str] = None,
@@ -283,6 +309,15 @@ class LLMService:
         self.timeout = int(os.getenv("LLM_TIMEOUT", "120"))
         self.retry_max_attempts = int(os.getenv("LLM_RETRY_MAX_ATTEMPTS", "3"))
         self.retry_backoff_seconds = float(os.getenv("LLM_RETRY_BACKOFF_SECONDS", "2.0"))
+
+        # Prompt size budgeting — prevents 413 / context_length_exceeded errors
+        # when a scan finds many issues or dependency-check returns large
+        # description/reference blobs. Tunable via env without code changes.
+        self.prompt_max_items = int(os.getenv("LLM_PROMPT_MAX_ITEMS", "25"))
+        self.prompt_max_str_len = int(os.getenv("LLM_PROMPT_MAX_STR_LEN", "400"))
+        # Conservative default (~6k tokens). Groq free tier often rejects bodies
+        # well below the model's nominal context window, so keep this low.
+        self.prompt_max_chars = int(os.getenv("LLM_PROMPT_MAX_CHARS", "24000"))
         # Optional LangChain path (mainly for OpenAI-compatible providers)
         self.use_langchain = os.getenv("LLM_USE_LANGCHAIN", "false").lower() in (
             "1", "true", "yes", "on"
@@ -411,6 +446,141 @@ class LLMService:
             config["inference_profile_arn"] = self.bedrock_inference_profile_arn
         return config
 
+    # ------------------------------------------------------------------
+    # Prompt budgeting helpers
+    # ------------------------------------------------------------------
+
+    def _compact(
+        self,
+        items: List[Dict[str, Any]],
+        top_k: Optional[int] = None,
+        drop_keys: Optional[List[str]] = None,
+        max_str_len: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Shrink a list of finding/dependency dicts so it fits in an LLM prompt.
+
+        - Sorts by severity (critical first) so the top-K kept items are the
+          most important.
+        - Drops heavy keys that explode prompt size without adding signal
+          (full CVE descriptions, reference link arrays, raw XML, etc.).
+        - Truncates remaining string fields to max_str_len characters so a
+          single huge field can't blow the budget on its own.
+
+        This is a deterministic, lossy compression. For full data, the raw
+        results stay in scan_result["raw_results"]; only the LLM prompt is
+        compacted.
+        """
+        if not isinstance(items, list) or not items:
+            return []
+
+        top_k = top_k if top_k is not None else self.prompt_max_items
+        max_str_len = max_str_len if max_str_len is not None else self.prompt_max_str_len
+        drop_keys = list(drop_keys) if drop_keys is not None else list(self._DEFAULT_HEAVY_KEYS)
+
+        def _sev_rank(item: Dict[str, Any]) -> int:
+            sev = (item.get("severity") or "").lower()
+            return self._SEVERITY_ORDER.get(sev, self._SEVERITY_ORDER[""])
+
+        ordered = sorted(items, key=_sev_rank)
+        if top_k > 0:
+            ordered = ordered[:top_k]
+
+        compacted: List[Dict[str, Any]] = []
+        for item in ordered:
+            if not isinstance(item, dict):
+                # Last-resort: stringify and truncate non-dict entries.
+                compacted.append({"value": str(item)[:max_str_len]})
+                continue
+            slim: Dict[str, Any] = {}
+            for k, v in item.items():
+                if k in drop_keys:
+                    continue
+                if isinstance(v, str) and len(v) > max_str_len:
+                    slim[k] = v[:max_str_len] + "…(truncated)"
+                else:
+                    slim[k] = v
+            compacted.append(slim)
+        return compacted
+
+    @staticmethod
+    def _is_context_length_error(response) -> bool:
+        """
+        Detect provider-specific context-length / payload-size error codes
+        beyond a bare HTTP 413, e.g. OpenAI's `context_length_exceeded` or
+        Groq's `request_too_large`.
+        """
+        if response is None:
+            return False
+        try:
+            body = response.json()
+        except Exception:
+            return False
+        err = (body or {}).get("error") or {}
+        code = (err.get("code") or err.get("type") or "").lower()
+        msg = (err.get("message") or "").lower()
+        markers = (
+            "context_length_exceeded",
+            "request_too_large",
+            "rate_limit_exceeded_tokens",
+            "string_above_max_length",
+            "too large",
+            "payload",
+        )
+        return any(m in code or m in msg for m in markers)
+
+    @staticmethod
+    def _approx_token_count(text: str) -> int:
+        """
+        Rough token estimate. Uses tiktoken when available for accuracy,
+        otherwise falls back to chars/4 which is the standard heuristic.
+        """
+        try:
+            import tiktoken  # type: ignore
+
+            enc = tiktoken.get_encoding("cl100k_base")
+            return len(enc.encode(text))
+        except Exception:
+            return max(1, len(text) // 4)
+
+    def _fit_prompt(
+        self,
+        prompt_builder,
+        items: List[Dict[str, Any]],
+        max_chars: Optional[int] = None,
+    ) -> str:
+        """
+        Repeatedly compact `items` until the rendered prompt fits in
+        max_chars. Halves top_k first, then max_str_len, before giving up.
+
+        prompt_builder is a callable(items_list) -> str that returns the
+        full prompt string. This keeps the surrounding template fixed and
+        only varies the part that actually grows with input size.
+        """
+        max_chars = max_chars if max_chars is not None else self.prompt_max_chars
+
+        top_k = self.prompt_max_items
+        max_str_len = self.prompt_max_str_len
+
+        for _ in range(8):
+            compacted = self._compact(items, top_k=top_k, max_str_len=max_str_len)
+            prompt = prompt_builder(compacted)
+            if len(prompt) <= max_chars:
+                return prompt
+            if top_k > 5:
+                top_k = max(5, top_k // 2)
+            elif max_str_len > 80:
+                max_str_len = max(80, max_str_len // 2)
+            else:
+                break
+
+        # Last resort: keep only counts + first 5 items at minimum truncation.
+        compacted = self._compact(items, top_k=5, max_str_len=80)
+        prompt = prompt_builder(compacted)
+        if len(prompt) > max_chars:
+            prompt = prompt[: max_chars - 64] + "\n…(prompt truncated to fit budget)"
+        return prompt
+
     def _generate_ollama(
         self,
         prompt: str,
@@ -524,6 +694,52 @@ class LLMService:
                     )
                     time.sleep(min(wait_s, 30.0))
                     continue
+
+                # Payload too large / context length exceeded — shrink the user
+                # message and retry once. We keep the system prompt intact and
+                # truncate the user content from the head so the closing
+                # instructions (which usually appear at the end of templates)
+                # are preserved.
+                if response.status_code == 413 or self._is_context_length_error(response):
+                    user_msg = next(
+                        (m for m in payload["messages"] if m.get("role") == "user"),
+                        None,
+                    )
+                    if user_msg and not payload.get("_shrunk_once"):
+                        original_len = len(user_msg.get("content", ""))
+                        target_len = max(1024, original_len // 2)
+                        user_msg["content"] = (
+                            user_msg["content"][-target_len:]
+                            if original_len > target_len
+                            else user_msg["content"]
+                        )
+                        payload["_shrunk_once"] = True
+                        # Strip our internal sentinel before sending again —
+                        # OpenAI-compat servers reject unknown top-level keys.
+                        retry_payload = {k: v for k, v in payload.items() if not k.startswith("_")}
+                        print(
+                            f"{self.provider} returned {response.status_code} "
+                            f"(payload too large). Retrying once with prompt "
+                            f"shrunk from {original_len} to {len(user_msg['content'])} chars."
+                        )
+                        try:
+                            response = requests.post(
+                                f"{self.base_url}/chat/completions",
+                                headers=headers,
+                                json=retry_payload,
+                                timeout=self.timeout,
+                            )
+                            if response.ok:
+                                result = response.json()
+                                return result["choices"][0]["message"]["content"].strip()
+                        except requests.exceptions.RequestException:
+                            pass
+                    raise RuntimeError(
+                        f"{self.provider} rejected the request as too large "
+                        f"({response.status_code}). Reduce LLM_PROMPT_MAX_ITEMS, "
+                        f"LLM_PROMPT_MAX_STR_LEN, or LLM_PROMPT_MAX_CHARS, or "
+                        f"switch to a model with a larger context window."
+                    )
 
                 response.raise_for_status()
                 result = response.json()
@@ -858,16 +1074,28 @@ class LLMService:
         Returns:
             Formatted release notes
         """
-        prompt = f"""Generate professional release notes based on the following information:
+        # Strip heavy fields from project_context once; the changes/issues
+        # lists go through _fit_prompt which budgets them dynamically.
+        slim_ctx = {
+            k: v
+            for k, v in (project_context or {}).items()
+            if k not in ("historical_context", "build_result", "repo_info")
+        }
 
-Code Changes:
-{json.dumps(changes, indent=2)}
+        def _build(compacted_items: List[Dict[str, Any]]) -> str:
+            half = max(1, len(compacted_items) // 2)
+            compacted_changes = compacted_items[:half]
+            compacted_issues = compacted_items[half:]
+            return f"""Generate professional release notes based on the following information:
 
-Issues Found:
-{json.dumps(issues, indent=2)}
+Code Changes (top by severity, heavy fields stripped):
+{json.dumps(compacted_changes, indent=2, default=str)}
+
+Issues Found (top by severity, heavy fields stripped):
+{json.dumps(compacted_issues, indent=2, default=str)}
 
 Project Context:
-{json.dumps(project_context or {}, indent=2)}
+{json.dumps(slim_ctx, indent=2, default=str)}
 
 Create well-structured release notes with:
 1. Summary of changes
@@ -878,6 +1106,9 @@ Create well-structured release notes with:
 6. Upgrade notes
 
 Format as markdown."""
+
+        merged = list(changes or []) + list(issues or [])
+        prompt = self._fit_prompt(_build, merged)
 
         system_prompt = "You are a technical writer specializing in software release notes. Create clear, professional, and informative release notes."
 
@@ -911,10 +1142,15 @@ Format as markdown."""
                 f"{json.dumps(historical_context, indent=2, default=str)}\n"
             )
 
-        prompt = f"""Analyze the following security vulnerabilities and suggest specific fixes:
+        def _build(compacted: List[Dict[str, Any]]) -> str:
+            return f"""Analyze the following security vulnerabilities and suggest specific fixes.
+
+The list has been pre-filtered to the highest-severity findings and heavy
+fields (full CVE descriptions, references, raw CVSS objects) have been
+stripped to keep the prompt size bounded.
 
 Vulnerabilities:
-{json.dumps(vulnerabilities, indent=2)}{history_block}
+{json.dumps(compacted, indent=2, default=str)}{history_block}
 
 For each vulnerability, provide:
 1. A clear explanation of the issue
@@ -932,6 +1168,8 @@ Strict JSON rules:
 - Escape any double quote inside a string value as \\".
 - Do not use trailing commas.
 - Do not wrap the JSON in markdown fences or add commentary before or after."""
+
+        prompt = self._fit_prompt(_build, vulnerabilities or [])
 
         system_prompt = (
             "You are a security expert. Provide actionable, specific fixes for "
@@ -976,10 +1214,14 @@ Strict JSON rules:
         Returns:
             Summary with recommendations
         """
-        prompt = f"""Analyze the following deprecation issues and provide a comprehensive summary:
+        def _build(compacted: List[Dict[str, Any]]) -> str:
+            return f"""Analyze the following deprecation issues and provide a comprehensive summary.
+
+The list has been pre-filtered to the highest-severity findings and heavy
+fields have been stripped to keep the prompt size bounded.
 
 Deprecation Issues:
-{json.dumps(deprecation_issues, indent=2)}
+{json.dumps(compacted, indent=2, default=str)}
 
 Provide:
 1. Summary of deprecated patterns found
@@ -995,6 +1237,8 @@ Strict JSON rules:
 - Escape any double quote inside a string value as \\".
 - Do not use trailing commas.
 - Do not wrap the JSON in markdown fences or add commentary before or after."""
+
+        prompt = self._fit_prompt(_build, deprecation_issues or [])
 
         system_prompt = (
             "You are a code modernization expert. Help teams migrate from "
