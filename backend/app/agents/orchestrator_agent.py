@@ -6,6 +6,7 @@ Gracefully falls back when LLM is unavailable or slow.
 from typing import List, Dict, Optional, Any, Callable
 import json
 import logging
+from collections import Counter
 from app.agents.security_agent import SecurityAnalyzer
 from app.agents.oss_agent import OSSAnalyzer
 from app.agents.change_agent import ChangeAnalyzer
@@ -138,6 +139,91 @@ class OrchestratorAgent:
             "recommendations": [],
         }
 
+    @staticmethod
+    def summarize_historical_context(
+        historical_context: Optional[Dict[str, Any]],
+        max_scans: int = 2,
+        max_issues_per_scan: int = 3,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Build a compact, prompt-friendly summary of RAG-retrieved history.
+
+        Returns None when there is no usable history, so callers can omit
+        the section entirely. Keeps payload small (top-N similar scans,
+        top-N issues per scan, plus recurring-pattern counts) so the LLM
+        prompt does not balloon.
+        """
+        if not historical_context:
+            return None
+
+        similar_scans = historical_context.get("similar_scans") or []
+        patterns = historical_context.get("patterns") or {}
+
+        if not similar_scans and not patterns:
+            return None
+
+        def _issue_brief(issue: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                k: v
+                for k, v in issue.items()
+                if k in (
+                    "type",
+                    "severity",
+                    "tool",
+                    "message",
+                    "package",
+                    "bug_type",
+                )
+            }
+
+        scan_briefs: List[Dict[str, Any]] = []
+        for scan in similar_scans[:max_scans]:
+            issues = scan.get("issues") or []
+            severity_rank = {
+                "critical": 0,
+                "high": 1,
+                "medium": 2,
+                "low": 3,
+                "info": 4,
+                "": 5,
+            }
+            sorted_issues = sorted(
+                issues,
+                key=lambda i: severity_rank.get(
+                    (i.get("severity") or "").lower(), 5
+                ),
+            )
+            scan_briefs.append(
+                {
+                    "scan_id": scan.get("scan_id"),
+                    "similarity": round(float(scan.get("similarity") or 0), 3),
+                    "project": (scan.get("project_context") or {}).get("name"),
+                    "total_issues": len(issues),
+                    "top_issues": [
+                        _issue_brief(i) for i in sorted_issues[:max_issues_per_scan]
+                    ],
+                }
+            )
+
+        type_counter: Counter = Counter()
+        for issue_type, issues in patterns.items():
+            type_counter[issue_type] += len(issues or [])
+
+        recurring = [
+            {"type": t, "occurrences": c}
+            for t, c in type_counter.most_common(5)
+            if c > 0
+        ]
+
+        if not scan_briefs and not recurring:
+            return None
+
+        return {
+            "similar_scan_count": len(similar_scans),
+            "similar_scans": scan_briefs,
+            "recurring_issue_types": recurring,
+        }
+
     def combine_outputs(
         self,
         agent_results: Dict[str, List[Dict]],
@@ -166,18 +252,32 @@ class OrchestratorAgent:
                 ],
             }
 
-        # Strip heavy fields from context to keep prompt small
+        # Strip heavy fields from context to keep prompt small. Historical
+        # context is summarized separately and injected as its own section
+        # below, so we still drop the full payload here.
         ctx = {
             k: v for k, v in project_context.items()
             if k not in ("historical_context", "build_result", "repo_info")
         }
+
+        history_summary = self.summarize_historical_context(
+            project_context.get("historical_context")
+        )
+        history_block = ""
+        if history_summary:
+            history_block = (
+                "\n\nHistorical context (summary of past scans of this "
+                "project, retrieved via RAG; use to spot recurring issues "
+                "and recommend durable fixes):\n"
+                f"{json.dumps(history_summary, indent=2, default=str)}\n"
+            )
 
         prompt = f"""Analyze the following scan results and create a concise report.
 
 Project: {json.dumps(ctx, indent=2, default=str)}
 
 Results (showing up to 3 issues per agent):
-{json.dumps(compact, indent=2, default=str)}
+{json.dumps(compact, indent=2, default=str)}{history_block}
 
 Respond with valid RFC 8259 JSON only (no markdown, no explanation) containing exactly these keys:
 {{"summary": "one paragraph of key findings",
@@ -190,7 +290,9 @@ Strict JSON rules:
 - Escape any double quote inside a string value as \\".
 - Do not use trailing commas.
 - Do not wrap the JSON in markdown fences or commentary.
-Keep each list to 3 items maximum. Be concise."""
+Keep each list to 3 items maximum. Be concise.
+If historical context is provided, explicitly call out any issue type
+that recurs across past scans in `recommendations` or `next_steps`."""
 
         try:
             response = self.llm_service.generate(

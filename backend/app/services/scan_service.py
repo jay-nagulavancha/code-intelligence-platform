@@ -157,6 +157,39 @@ class ScanService:
             if remediation_by_analyzer:
                 result["remediation_by_analyzer"] = remediation_by_analyzer
 
+            # --- Step 2.5: Refine RAG context using actual current issues ---
+            # The pre-orchestration RAG query has no issues yet, so it can
+            # only retrieve project-name-similar history. Now that the
+            # analyzers have produced findings, re-query so downstream LLM
+            # calls (vulnerability fix suggestions, etc.) can ground their
+            # advice in *issue-pattern-similar* past scans.
+            current_issues_for_rag = (result.get("report") or {}).get("raw_issues") or []
+            if current_issues_for_rag:
+                refined_history = self._query_rag_with_issues(
+                    project_context, current_issues_for_rag
+                )
+                if refined_history:
+                    historical_context = refined_history
+                    project_context["historical_context"] = refined_history
+                    if callable(io_trace):
+                        io_trace(
+                            name="scan.rag_context_refined.io",
+                            component_input={
+                                "scan_id": scan_id,
+                                "issue_count": len(current_issues_for_rag),
+                            },
+                            component_output={
+                                "similar_scan_count": len(
+                                    refined_history.get("similar_scans") or []
+                                ),
+                                "pattern_keys": list(
+                                    (refined_history.get("patterns") or {}).keys()
+                                ),
+                            },
+                            metadata={"component": "ScanService"},
+                            tags=["scan", "rag", "io"],
+                        )
+
             # --- Step 3: LLM enhancement (optional) ---
             if use_llm:
                 enhanced_result = self._enhance_with_llm(result, project_context)
@@ -432,6 +465,29 @@ class ScanService:
             print(f"RAG query failed (non-fatal): {e}")
         return {}
 
+    def _query_rag_with_issues(
+        self,
+        project_context: Dict[str, Any],
+        current_issues: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """
+        Re-query RAG with the issues produced by the current scan so that
+        retrieval is keyed on issue patterns, not just project name. Used
+        after analyzers run to enrich the historical context that feeds
+        downstream LLM steps (vulnerability fix suggestions, etc.).
+        """
+        if self.rag_service is None or not current_issues:
+            return {}
+        try:
+            if self.rag_service.is_available():
+                return self.rag_service.get_historical_context(
+                    current_issues=current_issues,
+                    project_context=project_context,
+                )
+        except Exception as e:
+            print(f"RAG re-query failed (non-fatal): {e}")
+        return {}
+
     def _store_in_rag(
         self,
         scan_id: str,
@@ -466,6 +522,10 @@ class ScanService:
         report = result.get("report", {})
         raw_results = result.get("raw_results", {})
 
+        history_summary = OrchestratorAgent.summarize_historical_context(
+            project_context.get("historical_context")
+        )
+
         # Generate release notes if changes are present
         if "change" in raw_results and raw_results["change"]:
             try:
@@ -482,7 +542,8 @@ class ScanService:
         if "security" in raw_results and raw_results["security"]:
             try:
                 suggestions = self.llm_service.suggest_vulnerability_fixes(
-                    vulnerabilities=raw_results["security"]
+                    vulnerabilities=raw_results["security"],
+                    historical_context=history_summary,
                 )
                 report["vulnerability_suggestions"] = suggestions
             except Exception as e:

@@ -884,30 +884,46 @@ Format as markdown."""
         return self.generate(prompt=prompt, system_prompt=system_prompt, max_tokens=max_tokens)
 
     def suggest_vulnerability_fixes(
-        self, 
+        self,
         vulnerabilities: List[Dict],
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        historical_context: Optional[Dict[str, Any]] = None,
     ) -> List[Dict]:
         """
         Suggest fixes for security vulnerabilities.
-        
+
         Args:
-            vulnerabilities: List of vulnerability issues
-            max_tokens: Maximum tokens to generate (optional, uses model default if None)
-        
+            vulnerabilities: List of vulnerability issues.
+            max_tokens: Maximum tokens to generate (optional).
+            historical_context: Optional compact RAG summary of past scans
+                of this project. When provided, the prompt asks the model
+                to ground recommendations in recurring issue patterns.
+
         Returns:
-            List of suggestions with fixes
+            List of suggestions with fixes.
         """
+        history_block = ""
+        if historical_context:
+            history_block = (
+                "\n\nHistorical context (summary of past scans of this "
+                "project, retrieved via RAG; use to spot recurring issue "
+                "types and recommend durable fixes when appropriate):\n"
+                f"{json.dumps(historical_context, indent=2, default=str)}\n"
+            )
+
         prompt = f"""Analyze the following security vulnerabilities and suggest specific fixes:
 
 Vulnerabilities:
-{json.dumps(vulnerabilities, indent=2)}
+{json.dumps(vulnerabilities, indent=2)}{history_block}
 
 For each vulnerability, provide:
 1. A clear explanation of the issue
 2. Specific code fix suggestions
 3. Best practices to prevent similar issues
 4. Priority level (critical, high, medium, low)
+5. If the vulnerability matches a recurring issue type from historical
+   context, set `"recurring": true` and briefly note the pattern in the
+   explanation; otherwise omit the field.
 
 Respond with a single valid RFC 8259 JSON array of suggestion objects.
 
