@@ -14,6 +14,7 @@ Companion to:
 1. [How is this different from GitHub's Security tab (Dependabot, code scanning, secret scanning)?](#1-how-is-this-different-from-githubs-security-tab-dependabot-code-scanning-secret-scanning)
 2. [How are we using RAG in the process?](#2-how-are-we-using-rag-in-the-process)
 3. [Are we sharing the entire codebase with the LLM, or only part of it? Do we synthesize before sending and after receiving?](#3-are-we-sharing-the-entire-codebase-with-the-llm-or-only-part-of-it-do-we-synthesize-before-sending-and-after-receiving)
+4. [What tools does the platform actually use?](#4-what-tools-does-the-platform-actually-use)
 
 > Add new questions to the index as they are added below.
 
@@ -223,6 +224,106 @@ Above everything: `LLMService.generate()` enforces a top-level prompt-size guard
 
 - If you demo on a brand-new repo with files larger than 12 KB, watch the LangSmith trace to confirm `truncate_code_blob` preserved the relevant section. If the fix relates to logic in the middle of a 50 KB file, you may want to bump `LLM_PROMPT_FILE_MAX_CHARS` for that demo.
 - Don't set `LLM_PROMPT_MAX_CHARS` higher than the model's context window minus headroom (e.g. for Claude 3.5 Sonnet on Bedrock keep it well under 180 K characters; default 24 K is conservative).
+
+---
+
+## 4) What tools does the platform actually use?
+
+### One-liner (use this if asked in passing)
+
+> "Eight industry-standard open-source scanners running in parallel under our orchestrator — Bandit, Semgrep, SpotBugs, OWASP Dependency-Check, pip-licenses, Checkov, Trivy, and Gitleaks — plus a pluggable LLM layer (Bedrock / Groq / OpenAI / Hugging Face / Ollama), FAISS or Qdrant for RAG, and LangSmith for tracing. The orchestrator and PR agent are our own; the rest is best-of-breed OSS."
+
+### Honest framing
+
+Everything below is what's wired up *today* on `main`. Stubs (`ArchitectAgent`, `GuardrailAgent` — empty placeholders for future work) are listed honestly so we don't oversell.
+
+### Static analysis (SAST)
+
+| Tool | Language(s) | What it catches | Wrapped by | License |
+|---|---|---|---|---|
+| **Bandit** | Python | Common Python security anti-patterns (eval/exec, weak crypto, hardcoded passwords, insecure subprocess use). | `SecurityAnalyzer` | Apache 2.0 |
+| **Semgrep** | Multi-language (Python, Java, JS, Go, ...) | Pattern-based and dataflow-lite SAST with a large community ruleset; complements Bandit by adding cross-cutting rules. | `SecurityAnalyzer` | LGPL 2.1 (Community) |
+| **SpotBugs** | Java | Bytecode-level bug pattern detection on compiled `.class` files (null-pointer issues, resource leaks, common security bugs). | `SecurityAnalyzer` | LGPL 2.1 |
+
+### Software composition (OSS / SCA)
+
+| Tool | Scope | What it catches | Wrapped by | License |
+|---|---|---|---|---|
+| **OWASP Dependency-Check** | Java (Maven / Gradle), Node, Python, Ruby, etc. | Known-vulnerable dependencies via CPE matching against the NVD. | `OSSAnalyzer` | Apache 2.0 |
+| **pip-licenses** | Python | License posture for installed Python packages (catches GPL/AGPL contamination in proprietary code, missing licenses, etc.). | `OSSAnalyzer` | MIT |
+
+### Infrastructure-as-Code (IaC)
+
+| Tool | Scope | What it catches | Wrapped by | License |
+|---|---|---|---|---|
+| **Checkov** | Terraform, CloudFormation, Kubernetes manifests, Helm charts, Dockerfiles, ARM templates | Misconfigurations against a large policy library (open security groups, unencrypted storage, public S3, missing IAM least-privilege, etc.). | `InfraAnalyzer` | Apache 2.0 |
+
+### Container
+
+| Tool | Scope | What it catches | Wrapped by | License |
+|---|---|---|---|---|
+| **Trivy** (filesystem mode + image mode) | Container images, OS packages, language deps inside images | CVEs in OS / language packages, misconfigs in Dockerfiles, exposed secrets. Fast, no external API needed. | `ContainerAnalyzer` | Apache 2.0 |
+
+### Secrets
+
+| Tool | Scope | What it catches | Wrapped by | License |
+|---|---|---|---|---|
+| **Gitleaks** | Repository contents and (optionally) git history | Hardcoded secrets via regex + entropy rules — AWS/GCP/Azure keys, API tokens, private keys, passwords. | `SecretsAnalyzer` | MIT |
+
+### In-house analyzers (no external tool)
+
+| Component | What it does | Notes |
+|---|---|---|
+| **ChangeAnalyzer** | `git diff` between base and head ref, normalized into per-file additions/deletions/line ranges. Feeds release-note generation. | Pure git, no third-party dependency. |
+| **DeprecationAnalyzer** | Python AST-based detection of deprecated patterns (legacy class style, etc.). | Extension point for adding more Python anti-patterns. |
+| **GitHubAnalyzer** | Repo metadata, issue history, recent commits via the MCP GitHub service. Surfaces project context to the LLM and is also used to create remediation issues / PRs. | Needs `GITHUB_TOKEN`. |
+| **OrchestratorAgent** | Decides which analyzers to run, executes them in parallel, calls the LLM to synthesize a unified report, falls back deterministically on LLM failure. | The "brain" of the platform. |
+| **PRAgent** | Two remediation modes — *deterministic* (safe, rules-based fixes per analyzer) and *AI-assisted* (LLM-generated whole-file fix candidates with AST + diff validation). Also generates unit tests for fixes and writes a post-PR LLM review comment. | Bounded by `REMEDIATION_MAX_FILES=3`. |
+
+### LLM layer (pluggable)
+
+| Provider | Adapter | Where it shines | Notes |
+|---|---|---|---|
+| **AWS Bedrock** | `_generate_bedrock` (Converse API) | Regulated workloads, in-region data residency, Anthropic Claude / Llama / etc. | Default in production. Optional `BEDROCK_INFERENCE_PROFILE_ARN` for cross-region inference profiles. |
+| **Groq** | `_generate_openai_compat` | Fast, cheap, free tier; great for dev and CI. | OpenAI-compatible. Subject to free-tier 413 / rate limits — handled by our 413-retry path. |
+| **OpenAI** | `_generate_openai_compat` | Production-grade, broad model selection. | Same OpenAI-compatible adapter as Groq. |
+| **Hugging Face Inference** | `_generate_huggingface` | Wide model selection via HF router, useful for niche / open-weight models. | Cost depends on the model. |
+| **Ollama** | `_generate_ollama` | Local / air-gapped, zero data egress. | Slower without a GPU; warmup helper bakes in keep-alive. |
+
+The `LLMService.generate()` entry point is provider-agnostic; calling code never branches on provider.
+
+### RAG / vector store
+
+| Component | Role | Notes |
+|---|---|---|
+| **FAISS** | Default, local-disk vector store at `.vector_db/faiss.index`. | No external service required; ideal for dev and single-host. |
+| **Qdrant** | Optional, remote vector store (cosine distance, HTTP API). | Switch via `vector_db_type="qdrant"` and `QDRANT_URL` / `QDRANT_PORT`. |
+| **sentence-transformers `all-MiniLM-L6-v2`** | Embedding model — 384-dim. | Local, no API call. Loading-report noise is suppressed by `RAGService._suppress_noisy_loggers`. |
+
+### Cross-cutting / supporting
+
+| Component | Role | Notes |
+|---|---|---|
+| **LangSmith** | Tracing of every LLM call, RAG retrieval, and pipeline step (with input/output capture). | The audit story — every prompt and response is replayable from the dashboard. |
+| **json-repair** | Fallback parser for malformed LLM JSON (truncated strings, missing commas, unescaped quotes). | Backed by an in-house brace/bracket balancer if the package isn't installed. |
+| **MCP GitHub service** | Reads repo metadata, creates issues, opens PRs, posts review comments. | Auth via `GITHUB_TOKEN`. |
+| **FastAPI + Pydantic** | API surface and request/response validation. | Standard. |
+
+### Deliberate non-tools (be candid about gaps)
+
+- **`ArchitectAgent` and `GuardrailAgent`** — empty stub classes today. Roadmap placeholders for architecture review and policy guardrails; do not include in the live demo's spoken narrative.
+- **No native CodeQL / SAST-engine** of our own — we deliberately wrap OSS tools rather than reinvent. If pushed, this is a *feature*, not a gap: we layer aggregation + AI + remediation on top of the best detectors that already exist.
+
+### Demo talking-point sequence (verbatim option)
+
+> "Under the hood we orchestrate eight industry-standard scanners — Bandit and Semgrep for Python and multi-language SAST, SpotBugs for Java, OWASP Dependency-Check and pip-licenses for SCA and license posture, Checkov for IaC, Trivy for containers, and Gitleaks for secrets. They all run in parallel, and our orchestrator normalizes their output into one schema before the LLM sees a single line of it."
+
+> "The LLM layer is pluggable — Bedrock for production, Groq for cost, Ollama for air-gapped — and every call is traced in LangSmith so you can audit exactly what the AI did and why."
+
+### Demo risk to manage
+
+- If asked about a tool we *don't* wrap (CodeQL, Snyk, Sonatype Nexus IQ, Black Duck), the honest answer is "not today, but the orchestrator is designed to plug in additional analyzers — it's a class drop-in." Don't promise specific timelines.
+- If asked which *version* of a scanner we run, the answer is "whatever the demo machine has installed" — we wrap the binary, we don't pin. Worth flagging as a hardening item before any production rollout.
 
 ---
 
