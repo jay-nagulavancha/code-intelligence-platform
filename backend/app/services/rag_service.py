@@ -10,6 +10,17 @@ import warnings
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
+# Quiet down transformers/HF before they are imported elsewhere. These cover
+# the most common noise (loading reports, progress bars) emitted via the
+# upstream logging module. The hard stdout/stderr redirect in
+# _suppress_noisy_loggers below catches anything that bypasses logging
+# (for example, transformers' tabulated "UNEXPECTED" key report which is
+# printed directly to stdout in newer versions).
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+os.environ.setdefault("HF_HUB_VERBOSITY", "error")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,9 +59,19 @@ class RAGService:
     @staticmethod
     def _suppress_noisy_loggers():
         """
-        Context manager that silences transformers/HF/sentence-transformers loggers
-        including child loggers like transformers.utils.loading_report that emit
-        on the root handler. Works across all Python/transformers versions.
+        Context manager that silences transformers/HF/sentence-transformers
+        output during model load:
+
+          - Lowers the upstream logging modules to CRITICAL.
+          - Calls `transformers.logging.set_verbosity_error()` if available.
+          - Redirects sys.stdout / sys.stderr to /dev/null so things printed
+            directly (notably transformers' tabulated loading report with
+            entries like `embeddings.position_ids | UNEXPECTED`, which is
+            emitted via plain `print()` in newer versions and therefore
+            bypasses Python logging entirely) cannot reach the demo console.
+
+        Exceptions raised inside the context are still propagated normally,
+        so genuine errors during model load are not hidden.
         """
         import contextlib
 
@@ -59,30 +80,56 @@ class RAGService:
             noisy = [
                 "transformers",
                 "transformers.utils.loading_report",
+                "transformers.modeling_utils",
                 "sentence_transformers",
+                "sentence_transformers.SentenceTransformer",
                 "huggingface_hub",
                 "huggingface_hub.utils._http",
                 "huggingface_hub.file_download",
             ]
-            # Save and silence each named logger
             saved_levels = {}
             for name in noisy:
                 lg = logging.getLogger(name)
                 saved_levels[name] = lg.level
                 lg.setLevel(logging.CRITICAL)
 
-            # Also temporarily remove handlers from root logger to stop
-            # propagated warnings reaching a potentially stale StreamHandler
             root = logging.getLogger()
             saved_handlers = root.handlers[:]
             root.handlers = []
 
+            saved_hf_verbosity = None
+            try:
+                from transformers.utils import logging as hf_logging
+                saved_hf_verbosity = hf_logging.get_verbosity()
+                hf_logging.set_verbosity_error()
+                hf_logging.disable_progress_bar()
+            except Exception:
+                pass
+
+            saved_stdout = sys.stdout
+            saved_stderr = sys.stderr
+            devnull = open(os.devnull, "w")
+            sys.stdout = devnull
+            sys.stderr = devnull
+
             try:
                 yield
             finally:
-                # Restore root handlers first
+                sys.stdout = saved_stdout
+                sys.stderr = saved_stderr
+                try:
+                    devnull.close()
+                except Exception:
+                    pass
+
+                if saved_hf_verbosity is not None:
+                    try:
+                        from transformers.utils import logging as hf_logging
+                        hf_logging.set_verbosity(saved_hf_verbosity)
+                    except Exception:
+                        pass
+
                 root.handlers = saved_handlers
-                # Then restore individual logger levels
                 for name, level in saved_levels.items():
                     logging.getLogger(name).setLevel(level)
 
