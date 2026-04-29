@@ -13,6 +13,7 @@ Companion to:
 
 1. [How is this different from GitHub's Security tab (Dependabot, code scanning, secret scanning)?](#1-how-is-this-different-from-githubs-security-tab-dependabot-code-scanning-secret-scanning)
 2. [How are we using RAG in the process?](#2-how-are-we-using-rag-in-the-process)
+3. [Are we sharing the entire codebase with the LLM, or only part of it? Do we synthesize before sending and after receiving?](#3-are-we-sharing-the-entire-codebase-with-the-llm-or-only-part-of-it-do-we-synthesize-before-sending-and-after-receiving)
 
 > Add new questions to the index as they are added below.
 
@@ -140,6 +141,88 @@ RAG sits at both ends of the pipeline. It's used **twice per scan** (once before
 
 - If you demo on a fresh sandbox with no prior scans, the LangSmith trace will show empty RAG payloads — so do a "seed run" of one or two scans before the demo so the second/third run actually surfaces historical context.
 - The prompt budget grew slightly. The recently raised `LLM_JSON_MAX_TOKENS=4096` keeps response truncation away, but watch the LangSmith trace once during dry-run to confirm prompt-token totals are still well under the model context window.
+
+---
+
+## 3) Are we sharing the entire codebase with the LLM, or only part of it? Do we synthesize before sending and after receiving?
+
+### One-liner (use this if asked in passing)
+
+> "We never upload the codebase. The orchestrator sends a structured summary of analyzer findings — counts, top issues, no file contents. The only path that ever sees source code is the AI fix path, and it's bounded: at most three files per scan, each truncated to a configurable byte budget, with a hard prompt-size cap on every call. Every fix candidate is then validated by AST parse and a `git diff` check before we keep it; failed candidates are rejected and the original file is restored byte-for-byte."
+
+### Honest framing
+
+There are exactly **seven LLM call sites** in the platform. Most send synthesized analyzer output, not source code. Only the AI code-fix and test-generation paths embed file contents, and those are now bounded at three layers (per-call compaction, top-level prompt-size guard, and a per-file head+tail truncator). All inputs and outputs flow through LangSmith for audit.
+
+### What each prompt actually sends
+
+| # | Where | Input to the LLM | Bound today |
+|---|---|---|---|
+| 1 | `OrchestratorAgent.combine_outputs` (the report) | Per-analyzer issue counts + top 3 issues per analyzer with whitelisted fields (`message, severity, file, line, bug_type, package, type`) + project metadata + compact RAG history rollup | Top-3-per-analyzer + field whitelist |
+| 2 | `LLMService.suggest_vulnerability_fixes` | Compacted vulnerabilities (sorted by severity, top-K, heavy fields stripped, strings truncated) + RAG history rollup | `_compact` + `_fit_prompt` (recursive shrink to fit `LLM_PROMPT_MAX_CHARS=24000`) |
+| 3 | `LLMService.summarize_deprecation_issues` | Same compaction pipeline | Same |
+| 4 | `LLMService.generate_release_notes` | Same compaction pipeline applied to `changes ∪ issues` | Same |
+| 5 | `PRAgent._generate_nondeterministic_candidate` (AI code fix) | One file at a time, content head+tail-truncated to `LLM_PROMPT_FILE_MAX_CHARS=12000` (default) + top 5 issues for that file | `REMEDIATION_MAX_FILES=3` files per scan + per-file byte cap + top-level prompt guard |
+| 6 | `PRAgent._generate_test_candidate` (AI test gen) | Updated source + existing test file, both head+tail-truncated to half the per-file budget | Same caps |
+| 7 | `PRAgent._build_review_body` (post-PR review) | Snippets of up to 5 changed files, hard-truncated to 1200 chars each | Bounded |
+
+Above everything: `LLMService.generate()` enforces a top-level prompt-size guard. Any prompt exceeding `LLM_PROMPT_MAX_CHARS` is tail-preserved (closing instructions kept) with a warning log — catches every present-and-future caller, even ones that build their own prompts.
+
+### Pre-send synthesis (what we do *before* sending)
+
+1. **Field whitelisting** — orchestrator strips heavy/noisy fields and keeps only `message, severity, file, line, bug_type, package, type`. Project context drops `historical_context`, `build_result`, `repo_info`.
+2. **Top-N truncation** — orchestrator: top 3 per analyzer; PR fix/test gen: top 5 issues per file.
+3. **`_compact`** (LLMService) — sorts findings by severity, keeps top-K, drops a default heavy-key list (full CVE descriptions, references, raw CVSS objects), truncates remaining string fields to `LLM_PROMPT_MAX_STR_LEN=400`.
+4. **`_fit_prompt`** (LLMService) — repeatedly shrinks `top_k` then `max_str_len` until the rendered prompt fits `LLM_PROMPT_MAX_CHARS=24000`. Last resort: hard-truncates with a marker.
+5. **`truncate_code_blob`** (LLMService) — for embedded source/test files, keeps head + tail (where imports / closing braces live) up to `LLM_PROMPT_FILE_MAX_CHARS=12000` with a marker in the middle.
+6. **RAG rollup compaction** — `summarize_historical_context` produces a tight summary: top 2 similar scans × top 3 issues each + top 5 recurring patterns.
+7. **Strict JSON contract** — every JSON-mode prompt explicitly demands RFC 8259 with escaped inner quotes and no trailing commas.
+
+### Post-receive synthesis / validation (what we do *after* receiving)
+
+1. **Markdown stripping** — both `extract_json_from_llm` and `_extract_code_block_or_text` peel off ```` ```json ```` / ```` ``` ```` fences.
+2. **Robust JSON parse** — `json.loads` → `json_repair` → in-house brace/bracket balancer → fallback to deterministic report.
+3. **AST validation** for fix candidates — Python via `ast.parse`, Java via brace-balance check. Invalid candidates are rejected.
+4. **Diff validation** — every AI-applied fix is re-checked with `git diff` to confirm a real change happened. If empty, rejected.
+5. **Bounded retries** — `REMEDIATION_MAX_ATTEMPTS=2` per file; on full failure the original is restored byte-for-byte.
+6. **Type validation** — orchestrator checks the result is a `dict`; `suggest_vulnerability_fixes` checks for a `list`; if not, falls back gracefully.
+7. **413 / context-length retry** — if the provider returns HTTP 413 or a known context-length error code (`context_length_exceeded`, `request_too_large`, etc.), the call is retried once with the user message tail-truncated to half its size before surfacing a clear error.
+8. **LangSmith tracing** — every prompt and response captured (with 1200-char trace truncation for readability) so any past call can be replayed and audited.
+
+### Configuration knobs (env, no code changes needed)
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `LLM_PROMPT_MAX_ITEMS` | `25` | Max items kept by `_compact` |
+| `LLM_PROMPT_MAX_STR_LEN` | `400` | Per-string truncation inside `_compact` |
+| `LLM_PROMPT_MAX_CHARS` | `24000` | Hard ceiling on full prompt size |
+| `LLM_PROMPT_FILE_MAX_CHARS` | `12000` | Per-embedded-file head+tail budget |
+| `LLM_JSON_MAX_TOKENS` | `4096` | Response token ceiling for JSON-mode prompts |
+| `REMEDIATION_MAX_FILES` | `3` | Max files the AI fix path will touch per scan |
+| `REMEDIATION_MAX_ATTEMPTS` | `2` | Retries per file before restoring original |
+
+### Where the alternative wins (acknowledge openly)
+
+1. **Whole-repo context** — tools that copilot-fy entire IDE workflows (Cursor, Copilot, Claude Code) can reason across the full repo because they sit inside the editor with the developer driving and explicit cost/latency awareness. Our platform is batch and bounded, so cross-file reasoning is intentionally limited to one file at a time.
+2. **Secret/PII redaction** — we don't yet pre-scan flagged file contents for secrets before sending. Bedrock keeps data in-region and doesn't train on it, so the risk is bounded — but this should be on the roadmap for any regulated workload.
+
+### Where we win (lead with these)
+
+1. **Hard prompt budgets at three layers** — per-call compaction, top-level guard, per-file truncation. Prompts cannot accidentally blow the context window or trigger 413s on Groq free tier.
+2. **No-trust output validation** — every AI fix is parsed, diffed, and either accepted or fully reverted. The LLM never silently corrupts the working tree.
+3. **Fully audit-able** — every prompt and response is in LangSmith. Easy to answer "what exactly did you send to Bedrock for this fix?" with a screenshot.
+4. **Provider-agnostic** — Bedrock for regulated, Groq/OpenAI for cheap, Ollama for air-gapped. Same compaction and validation pipeline in front of all of them.
+
+### Demo talking-point sequence (verbatim option)
+
+> "We never upload the codebase. The orchestrator sends a structured summary of analyzer findings — counts, top issues per analyzer, no file contents. The only path that ever sees source code is the AI fix path, and it's bounded three ways: at most three files per scan, each truncated to 12,000 characters with head+tail preservation, and a hard 24,000-character cap on the whole prompt. If the LLM returns broken Python we reject it via AST parse, and a `git diff` check makes sure something actually changed. If it returns nothing or anything invalid, we restore the original file byte-for-byte. Every prompt and response is captured in LangSmith so we can audit exactly what went over the wire."
+
+> "For regulated environments we run Bedrock in-region — your code never leaves your AWS account or feeds anyone's training data."
+
+### Demo risk to manage
+
+- If you demo on a brand-new repo with files larger than 12 KB, watch the LangSmith trace to confirm `truncate_code_blob` preserved the relevant section. If the fix relates to logic in the middle of a 50 KB file, you may want to bump `LLM_PROMPT_FILE_MAX_CHARS` for that demo.
+- Don't set `LLM_PROMPT_MAX_CHARS` higher than the model's context window minus headroom (e.g. for Claude 3.5 Sonnet on Bedrock keep it well under 180 K characters; default 24 K is conservative).
 
 ---
 
