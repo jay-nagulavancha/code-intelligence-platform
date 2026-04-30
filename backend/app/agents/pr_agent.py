@@ -80,6 +80,50 @@ class PRAgent:
         for p in candidates:
             if os.path.exists(p):
                 return p
+        if issue.get("language") == "java":
+            found = self._find_java_source_file(repo_path, normalized)
+            if found:
+                return found
+        return None
+
+    def _find_java_source_file(self, repo_path: str, package_relative_path: str) -> Optional[str]:
+        """
+        Locate a Java source file given SpotBugs-style paths like
+        com/example/Foo.java relative to some .../src/main/java root.
+
+        Single-module repos use repo/src/main/java/...; Maven monorepos often use
+        module/submodule/src/main/java/... (autocare, Spring multi-module, etc.).
+        """
+        if not package_relative_path:
+            return None
+        rel = package_relative_path.replace("\\", "/").lstrip("./")
+        if not rel.endswith(".java"):
+            return None
+
+        direct = os.path.join(repo_path, "src/main/java", rel)
+        if os.path.isfile(direct):
+            return os.path.normpath(direct)
+
+        rel_parts = rel.split("/")
+        skip_dirs = {
+            ".git",
+            "node_modules",
+            "target",
+            "build",
+            ".gradle",
+            "__pycache__",
+            ".venv",
+            "venv",
+            "dist",
+        }
+
+        for root, dirs, _files in os.walk(repo_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            norm_root = root.replace("\\", "/")
+            if norm_root.endswith("/src/main/java"):
+                candidate = os.path.join(root, *rel_parts)
+                if os.path.isfile(candidate):
+                    return os.path.normpath(candidate)
         return None
 
     def _collect_nondeterministic_issues_by_file(
@@ -845,7 +889,9 @@ Keep it concise and practical.
             rel_file = issue.get("file")
             if not rel_file:
                 continue
-            abs_file = os.path.join(repo_path, "src/main/java", rel_file)
+            abs_file = self._find_java_source_file(repo_path, rel_file)
+            if not abs_file:
+                continue
             by_file.setdefault(abs_file, []).append(issue)
         return by_file
 
@@ -866,7 +912,9 @@ Keep it concise and practical.
             rel_file = issue.get("file")
             if not rel_file:
                 continue
-            abs_file = os.path.join(repo_path, "src/main/java", rel_file)
+            abs_file = self._find_java_source_file(repo_path, rel_file)
+            if not abs_file:
+                continue
             by_file.setdefault(abs_file, []).append(issue)
         return by_file
 
