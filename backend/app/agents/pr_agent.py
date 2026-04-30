@@ -742,6 +742,17 @@ Keep it concise and practical.
             return content[:insert_at] + f"\n\nimport {import_line};" + content[insert_at:]
         return f"import {import_line};\n{content}"
 
+    @staticmethod
+    def _is_jpa_entity_java(content: str) -> bool:
+        """
+        True when this compilation unit declares a JPA persistence entity.
+
+        Deterministic EI_EXPOSE_REP "fixes" that wrap collection getters in defensive
+        copies break Hibernate: code such as entity.getLines().add(line) mutates a
+        throwaway copy, so associations are never persisted.
+        """
+        return bool(re.search(r"^\s*@Entity\b", content, flags=re.MULTILINE))
+
     def _apply_collection_defensive_copies(self, content: str) -> str:
         """
         Apply conservative defensive-copy fixes for mutable collection getters/setters.
@@ -782,7 +793,7 @@ Keep it concise and practical.
         setter_pattern = re.compile(
             r"(public\s+void\s+set\w+\s*\(\s*)"
             r"(List<[^>]+>|Set<[^>]+>|Map<[^>]+,\s*[^>]+>)\s+(\w+)\s*"
-            r"(\)\s*\{\s*this\.(\w+)\s*=\s*)(\w+)(\s*;\s*\})",
+            r"(\)\s*\{\s*)this\.(\w+)\s*=\s*(\w+)(\s*;\s*\})",
             flags=re.DOTALL,
         )
 
@@ -858,7 +869,8 @@ Keep it concise and practical.
         bug_types = {(i.get("bug_type") or "").upper() for i in issues}
 
         if "EI_EXPOSE_REP" in bug_types or "EI_EXPOSE_REP2" in bug_types:
-            content = self._apply_collection_defensive_copies(content)
+            if not self._is_jpa_entity_java(content):
+                content = self._apply_collection_defensive_copies(content)
         if "HE_EQUALS_USE_HASHCODE" in bug_types:
             content = self._apply_equals_hashcode_fix(content)
 
