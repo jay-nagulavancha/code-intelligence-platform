@@ -194,15 +194,17 @@ class SecurityAnalyzer:
                     root = tree.getroot()
 
                     for bug in root.findall(".//BugInstance"):
+                        short_msg = bug.findtext("ShortMessage", "") or ""
+                        long_msg = bug.findtext("LongMessage", "") or ""
                         issue = {
                             "type": "security",
                             "language": "java",
                             "tool": "spotbugs",
                             "category": bug.get("category", "unknown"),
                             "bug_type": bug.get("type", "unknown"),
-                            "message": bug.findtext("ShortMessage", ""),
+                            "message": short_msg or long_msg,
                             "file": None,
-                            "line": None
+                            "line": None,
                         }
 
                         source_line = bug.find(".//SourceLine")
@@ -221,6 +223,19 @@ class SecurityAnalyzer:
                             issue["severity"] = "medium"
                         else:
                             issue["severity"] = "low"
+
+                        # Mutable-representation exposure on JWT/password-adjacent getters is treated as
+                        # critical for triage (SpotBugs still reports priority 2 for many EI_* hits).
+                        bt = (issue.get("bug_type") or "").upper()
+                        if bt in ("EI_EXPOSE_REP", "EI_EXPOSE_REP2"):
+                            blob = f"{short_msg} {long_msg}".lower()
+                            fpath = (issue.get("file") or "").lower()
+                            if (
+                                "jwt" in blob
+                                or "password" in blob
+                                or "demojwtsecretexposure" in fpath
+                            ):
+                                issue["severity"] = "critical"
 
                         issues.append(issue)
                 except Exception as e:
