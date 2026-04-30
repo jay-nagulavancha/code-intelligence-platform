@@ -34,10 +34,11 @@ class RAGService:
 
     def __init__(
         self,
-        vector_db_type: str = "faiss",
+        vector_db_type: Optional[str] = None,
         persist_dir: Optional[str] = None,
     ):
-        self.vector_db_type = vector_db_type
+        raw = (vector_db_type or os.getenv("VECTOR_DB_TYPE") or "faiss").strip().lower()
+        self.vector_db_type = raw if raw in ("faiss", "qdrant") else "faiss"
         self.persist_dir = persist_dir or os.getenv(
             "VECTOR_DB_DIR",
             os.path.join(os.getcwd(), ".vector_db"),
@@ -170,8 +171,13 @@ class RAGService:
 
         qdrant_url = os.getenv("QDRANT_URL", "localhost")
         qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
+        qdrant_timeout = int(os.getenv("QDRANT_TIMEOUT_SEC", "15"))
 
-        self._client = QdrantClient(host=qdrant_url, port=qdrant_port)
+        self._client = QdrantClient(
+            host=qdrant_url,
+            port=qdrant_port,
+            timeout=qdrant_timeout,
+        )
         collection_name = "code_intelligence"
 
         try:
@@ -194,6 +200,15 @@ class RAGService:
             return
         if self._init_error is not None:
             return  # already tried and failed — don't retry
+
+        silent = os.environ.get("RAG_SILENT_INIT", "").lower() in ("1", "true", "yes")
+        if not silent:
+            print(
+                "  RAG: initializing — loading embedding model "
+                "(first run may download ~90MB from Hugging Face; "
+                "`--no-rag` skips RAG; set RAG_SILENT_INIT=1 to hide this line)...",
+                flush=True,
+            )
 
         try:
             if self.vector_db_type == "faiss":
