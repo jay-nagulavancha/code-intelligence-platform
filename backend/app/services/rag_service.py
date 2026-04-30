@@ -23,6 +23,9 @@ os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 logger = logging.getLogger(__name__)
 
+# Default embedding model — 384-dim vectors (must match existing FAISS index / Qdrant collection).
+_DEFAULT_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+
 
 class RAGService:
     """
@@ -136,14 +139,51 @@ class RAGService:
 
         return _ctx()
 
+    def _load_sentence_transformer(self):
+        """
+        Load embedding model from a local directory, Hugging Face cache, or Hub.
+
+        Vector DB files (FAISS under VECTOR_DB_DIR) are always local; the *model
+        weights* are separate. First Hub use downloads into HF cache (~/.cache/huggingface
+        or HF_HOME); thereafter use HF_HUB_OFFLINE=1 or RAG_LOCAL_FILES_ONLY=1 to
+        avoid any network. Or set RAG_EMBEDDING_MODEL to an absolute path to a
+        saved model folder (no download).
+        """
+        from sentence_transformers import SentenceTransformer
+
+        raw = (os.getenv("RAG_EMBEDDING_MODEL") or _DEFAULT_EMBEDDING_MODEL).strip()
+        kwargs: Dict[str, Any] = {}
+        cache_folder = (
+            os.getenv("SENTENCE_TRANSFORMERS_HOME")
+            or os.getenv("TRANSFORMERS_CACHE")
+            or None
+        )
+        if cache_folder:
+            kwargs["cache_folder"] = cache_folder
+
+        local_only = (
+            os.getenv("RAG_LOCAL_FILES_ONLY", "").lower() in ("1", "true", "yes")
+            or os.getenv("HF_HUB_OFFLINE", "").lower() in ("1", "true", "yes")
+        )
+        if local_only:
+            kwargs["local_files_only"] = True
+
+        # Local snapshot directory — loads entirely from disk (no Hub).
+        if os.path.isdir(raw):
+            kwargs.pop("local_files_only", None)
+            model_ref = raw
+        else:
+            model_ref = raw
+
+        return SentenceTransformer(model_ref, **kwargs)
+
     def _initialize_faiss(self):
         """Initialize FAISS vector database."""
         with self._suppress_noisy_loggers():
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 import faiss  # noqa: F811
-                from sentence_transformers import SentenceTransformer
-            self._embeddings = SentenceTransformer("all-MiniLM-L6-v2")
+            self._embeddings = self._load_sentence_transformer()
 
         index_path = os.path.join(self.persist_dir, "faiss.index")
         metadata_path = os.path.join(self.persist_dir, "metadata.json")
@@ -166,8 +206,7 @@ class RAGService:
                 warnings.simplefilter("ignore")
                 from qdrant_client import QdrantClient
                 from qdrant_client.models import Distance, VectorParams
-                from sentence_transformers import SentenceTransformer
-            self._embeddings = SentenceTransformer("all-MiniLM-L6-v2")
+            self._embeddings = self._load_sentence_transformer()
 
         qdrant_url = os.getenv("QDRANT_URL", "localhost")
         qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
@@ -203,10 +242,21 @@ class RAGService:
 
         silent = os.environ.get("RAG_SILENT_INIT", "").lower() in ("1", "true", "yes")
         if not silent:
+            emb = (os.getenv("RAG_EMBEDDING_MODEL") or _DEFAULT_EMBEDDING_MODEL).strip()
+            local_hint = (
+                "from disk (local path)"
+                if os.path.isdir(emb)
+                else (
+                    "cache-only (HF_HUB_OFFLINE/RAG_LOCAL_FILES_ONLY)"
+                    if os.getenv("HF_HUB_OFFLINE", "").lower() in ("1", "true", "yes")
+                    or os.getenv("RAG_LOCAL_FILES_ONLY", "").lower()
+                    in ("1", "true", "yes")
+                    else "Hub or HF cache — first run downloads ~90MB unless cached"
+                )
+            )
             print(
-                "  RAG: initializing — loading embedding model "
-                "(first run may download ~90MB from Hugging Face; "
-                "`--no-rag` skips RAG; set RAG_SILENT_INIT=1 to hide this line)...",
+                f"  RAG: initializing — embeddings {local_hint}; "
+                f"`--no-rag` skips; RAG_SILENT_INIT=1 hides this.\n",
                 flush=True,
             )
 
