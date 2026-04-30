@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Intelligence Platform – Architecture</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #e8f5f0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .diagram {
+      background: #e8f5f0;
+      width: 900px;
+      padding: 36px 40px 40px;
+    }
+
+    /* ── Title ── */
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .title-bar {
+      width: 5px;
+      height: 36px;
+      background: #2ecc71;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .title h1 {
+      font-size: 22px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+
+    /* ── Generic helpers ── */
+    .row {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin-bottom: 0;
+    }
+
+    .arrow-col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    /* ── Boxes ── */
+    .box {
+      border-radius: 10px;
+      padding: 12px 16px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    /* Entry point */
+    .box-entry {
+      background: #fff8dc;
+      border: 2px solid #c8a800;
+      color: #5a4000;
+      width: 200px;
+    }
+
+    /* Scan pipeline */
+    .box-pipeline {
+      background: #e8f4ff;
+      border: 2px solid #5b9bd5;
+      color: #1a3a5c;
+      width: 820px;
+      padding: 18px 24px;
+      text-align: left;
+      border-radius: 12px;
+    }
+    .box-pipeline .pipeline-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1a3a5c;
+      margin-bottom: 8px;
+    }
+    .pipeline-steps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .pipeline-step {
+      background: #c8e0f8;
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #1a3a5c;
+    }
+
+    /* Analyzers */
+    .box-analyzer {
+      background: #ede7f6;
+      border: 2px solid #9c6fd6;
+      color: #3a1a6e;
+      width: 140px;
+      min-height: 80px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .box-analyzer .tag {
+      font-size: 10px;
+      font-weight: 500;
+      color: #7c4daa;
+      background: #d8c8f0;
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+
+    /* Services */
+    .box-service {
+      background: #e8f8f0;
+      border: 2px solid #27ae60;
+      color: #145a32;
+      width: 190px;
+      min-height: 100px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 12px 10px;
+      gap: 4px;
+    }
+    .box-service .svc-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #145a32;
+      margin-bottom: 4px;
+    }
+    .box-service .svc-detail {
+      font-size: 10.5px;
+      font-weight: 400;
+      color: #1e8449;
+      text-align: center;
+      line-height: 1.5;
+    }
+
+    /* Accumulated signals bar */
+    .bar-green {
+      background: #d4f5e2;
+      border: 2px solid #27ae60;
+      border-radius: 10px;
+      padding: 14px 24px;
+      text-align: center;
+      width: 820px;
+      color: #145a32;
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.6;
+    }
+    .bar-green .sub {
+      font-size: 12px;
+      font-weight: 500;
+      color: #1e8449;
+    }
+
+    /* Section label */
+    .section-label {
+      text-align: center;
+      margin: 20px 0 12px;
+    }
+    .section-label .main {
+      font-size: 15px;
+      font-weight: 700;
+      color: #1a1a2e;
+    }
+    .section-label .sub {
+      font-size: 12px;
+      color: #555;
+      margin-top: 2px;
+    }
+
+    /* Dashed container */
+    .dashed-box {
+      border: 2px dashed #555;
+      border-radius: 14px;
+      padding: 20px 24px 24px;
+      width: 820px;
+      display: flex;
+      gap: 0;
+    }
+    .dashed-col {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .dashed-col-label {
+      font-size: 12px;
+      color: #444;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .dashed-divider {
+      width: 1px;
+      background: #ccc;
+      margin: 0 20px;
+    }
+
+    /* Oval chips */
+    .oval {
+      border-radius: 50px;
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 2px solid;
+      display: inline-block;
+    }
+    .oval-purple {
+      background: #f3eaff;
+      border-color: #9c6fd6;
+      color: #5a1fa0;
+    }
+    .oval-blue {
+      background: #e8f0ff;
+      border-color: #5b9bd5;
+      color: #1a3a7c;
+    }
+    .oval-green {
+      background: #e8f8f0;
+      border-color: #27ae60;
+      color: #145a32;
+    }
+    .oval-orange {
+      background: #fff3e0;
+      border-color: #e67e22;
+      color: #7d3c00;
+    }
+
+    /* Arrows */
+    .arrow-down {
+      width: 2px;
+      background: #555;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .arrow-down::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 7px solid #555;
+    }
+
+    /* Multi-arrow connector */
+    .multi-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 820px;
+      margin: 0 auto;
+    }
+    .multi-arrow-line {
+      width: 2px;
+      height: 16px;
+      background: #555;
+    }
+    .multi-arrow-spread {
+      display: flex;
+      justify-content: space-around;
+      width: 100%;
+      position: relative;
+    }
+    .multi-arrow-spread::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 10%;
+      right: 10%;
+      height: 2px;
+      background: #555;
+    }
+    .multi-arrow-leg {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .multi-arrow-leg-line {
+      width: 2px;
+      height: 20px;
+      background: #555;
+      position: relative;
+    }
+    .multi-arrow-leg-line::after {
+      content: '';
+      position: absolute;
+      bottom: -6px;
+      left: 50%;
+      transform: translateX(-50%);
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 7px solid #555;
+    }
+
+    /* Service multi-arrow */
+    .svc-arrow-spread {
+      display: flex;
+      justify-content: space-around;
+      width: 820px;
+      position: relative;
+      margin: 0 auto;
+    }
+    .svc-arrow-spread::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 5%;
+      right: 5%;
+      height: 2px;
+      background: #555;
+    }
+
+    .spacer { height: 16px; }
+    .spacer-sm { height: 8px; }
+
+    /* Centered wrapper */
+    .center { display: flex; justify-content: center; }
+
+    /* Note text */
+    .note {
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    /* Fraud note inside dashed */
+    .fraud-note {
+      font-size: 11px;
+      color: #c0392b;
+      font-weight: 600;
+      margin-top: -4px;
+    }
+  </style>
+</head>
+<body>
+<div class="diagram">
+
+  <!-- Title -->
+  <div class="title">
+    <div class="title-bar"></div>
+    <h1>Code Intelligence Platform – Architecture</h1>
+  </div>
+
+  <!-- Entry: API / CLI -->
+  <div class="center">
+    <div class="box box-entry">
+      API (FastAPI) / CLI<br/>
+      <span style="font-size:11px;font-weight:400;">scan_github_repo.py</span>
+    </div>
+  </div>
+  <div class="note">POST /api/scan · GET /api/scan/{id} · POST /api/scan/{id}/remediate · GET /dashboard/summary · GET /repos · GET /findings · POST /api/github/*</div>
+
+  <!-- Arrow down -->
+  <div class="center"><div style="width:2px;height:24px;background:#555;position:relative;">
+    <span style="position:absolute;bottom:-7px;left:50%;transform:translateX(-50%);border-left:5px solid transparent;border-right:5px solid transparent;border-top:7px solid #555;display:block;"></span>
+  </div></div>
+
+  <div class="spacer-sm"></div>
+
+  <!-- Scan Pipeline box -->
+  <div class="center">
+    <div class="box-pipeline">
+      <div class="pipeline-title">ScanService — Full Pipeline</div>
+      <div class="pipeline-steps">
+        <span class="pipeline-step">1. Fetch repo info (GitHub API)</span>
+        <span class="pipeline-step">2. Clone repo (--depth 1)</span>
+        <span class="pipeline-step">3. Detect language → ProjectBuilder (Java)</span>
+        <span class="pipeline-step">4. RAG historical context query</span>
+        <span class="pipeline-step">5. Orchestrator → run analyzers → LLM combine</span>
+        <span class="pipeline-step">6. Refined RAG query (with actual findings)</span>
+        <span class="pipeline-step">7. LLM enhancement (fix suggestions, release notes)</span>
+        <span class="pipeline-step">8. RAG storage</span>
+        <span class="pipeline-step">9. Create GitHub Issues (critical/high)</span>
+        <span class="pipeline-step">10. Optional auto-fix PR · Cleanup</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- Multi-arrow to analyzers (8 legs) -->
+  <div class="multi-arrow" style="width:860px;">
+    <div class="multi-arrow-line"></div>
+    <div class="multi-arrow-spread" style="width:860px;">
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+    </div>
+  </div>
+
+  <div class="spacer-sm"></div>
+
+  <!-- Analyzers row — all 8 -->
+  <div class="row" style="gap:10px; flex-wrap:wrap; width:900px;">
+    <div class="box box-analyzer" style="width:120px;">
+      <strong>Security</strong>
+      <span class="tag">Bandit · Semgrep</span>
+      <span class="tag">SpotBugs</span>
+      <span class="tag">auto-build ✓</span>
+    </div>
+    <div class="box box-analyzer" style="width:120px;">
+      <strong>OSS / Deps</strong>
+      <span class="tag">pip-licenses</span>
+      <span class="tag">OWASP DepChk</span>
+      <span class="tag">auto-build ✓</span>
+    </div>
+    <div class="box box-analyzer" style="width:110px;">
+      <strong>Change</strong>
+      <span class="tag">git diff</span>
+    </div>
+    <div class="box box-analyzer" style="width:110px;">
+      <strong>Deprecation</strong>
+      <span class="tag">AST rules</span>
+    </div>
+    <div class="box box-analyzer" style="width:110px;">
+      <strong>Secrets</strong>
+      <span class="tag">Gitleaks</span>
+    </div>
+    <div class="box box-analyzer" style="width:110px;">
+      <strong>Infra / IaC</strong>
+      <span class="tag">Checkov</span>
+    </div>
+    <div class="box box-analyzer" style="width:110px;">
+      <strong>Container</strong>
+      <span class="tag">Trivy</span>
+    </div>
+    <div class="box box-analyzer" style="width:110px;">
+      <strong>GitHub</strong>
+      <span class="tag">MCP protocol</span>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- Arrow + bar (8 legs) -->
+  <div class="multi-arrow" style="width:860px;">
+    <div class="multi-arrow-spread" style="width:860px;">
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+      <div class="multi-arrow-leg"><div class="multi-arrow-leg-line" style="height:14px;"></div></div>
+    </div>
+    <div class="multi-arrow-line" style="height:0;"></div>
+  </div>
+
+  <div class="center">
+    <div class="bar-green">
+      Orchestrator Agent — LLM-powered coordination<br/>
+      <span class="sub">Selects analyzers · Combines outputs · Generates recommendations · Actionable next steps</span>
+    </div>
+  </div>
+
+  <!-- Section label -->
+  <div class="section-label">
+    <div class="main">Core Services power every scan</div>
+    <div class="sub">Each service is independently configurable and gracefully degrades when unavailable</div>
+  </div>
+
+  <!-- Arrow spread to services (5 legs) -->
+  <div class="svc-arrow-spread">
+    <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+    <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+    <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+    <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+    <div class="multi-arrow-leg"><div class="multi-arrow-leg-line"></div></div>
+  </div>
+
+  <div class="spacer-sm"></div>
+
+  <!-- Services row -->
+  <div class="row" style="gap:12px; flex-wrap:wrap; width:900px;">
+    <div class="box box-service" style="width:168px;">
+      <div class="svc-title">LLM Service</div>
+      <div class="svc-detail">
+        Ollama · Groq · OpenAI<br/>
+        HuggingFace · AWS Bedrock<br/>
+        Fix suggestions · Release notes<br/>
+        Summaries · LangSmith tracing
+      </div>
+    </div>
+    <div class="box box-service" style="width:168px;">
+      <div class="svc-title">RAG Service</div>
+      <div class="svc-detail">
+        FAISS · Qdrant<br/>
+        Store &amp; query scan history<br/>
+        Semantic search · Embeddings<br/>
+        (all-MiniLM-L6-v2)
+      </div>
+    </div>
+    <div class="box box-service" style="width:168px;">
+      <div class="svc-title">ProjectBuilder</div>
+      <div class="svc-detail">
+        Maven · Gradle auto-build<br/>
+        Java version detection<br/>
+        JDK resolution (macOS + Linux)<br/>
+        mvnw / gradlew wrappers
+      </div>
+    </div>
+    <div class="box box-service" style="width:168px;">
+      <div class="svc-title">MCP GitHub</div>
+      <div class="svc-detail">
+        Repository API · File ops<br/>
+        Issue creation<br/>
+        PR creation + PR reviews<br/>
+        Commits · Diffs (10 tools)
+      </div>
+    </div>
+    <div class="box box-service" style="width:168px;">
+      <div class="svc-title">PR Agent</div>
+      <div class="svc-detail">
+        Apply LLM fix suggestions<br/>
+        Push to feature branch<br/>
+        Open pull request<br/>
+        Deterministic / non-det modes
+      </div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <!-- Section label for outputs -->
+  <div class="section-label">
+    <div class="main">Scan outputs span multiple dimensions</div>
+    <div class="sub">Results are stored in RAG and surfaced via API, CLI, and GitHub Issues</div>
+  </div>
+
+  <!-- Dashed outputs box -->
+  <div class="center">
+    <div class="dashed-box">
+
+      <!-- Left col: Findings -->
+      <div class="dashed-col">
+        <div class="dashed-col-label">Security &amp; Dependency Findings</div>
+        <span class="oval oval-purple">Vulnerabilities (CVE · CWE)</span>
+        <span class="oval oval-purple">CVSS Scores &amp; Severity</span>
+        <span class="oval oval-purple">License Compliance</span>
+        <span class="oval oval-purple">Secrets &amp; Leaked Credentials</span>
+        <span class="oval oval-purple">IaC Misconfigurations</span>
+        <span class="oval oval-purple">Container Vulnerabilities</span>
+        <div class="fraud-note">Auto-creates GitHub Issues for critical/high · Optional auto-fix PR</div>
+      </div>
+
+      <div class="dashed-divider"></div>
+
+      <!-- Right col: Intelligence -->
+      <div class="dashed-col">
+        <div class="dashed-col-label">AI-Generated Intelligence</div>
+        <span class="oval oval-green">LLM Fix Suggestions</span>
+        <span class="oval oval-green">Release Notes</span>
+        <span class="oval oval-blue">Historical Patterns (RAG)</span>
+        <span class="oval oval-orange">Deprecation Migration Paths</span>
+        <span class="oval oval-blue">Dashboard · Trends · Repo Health</span>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

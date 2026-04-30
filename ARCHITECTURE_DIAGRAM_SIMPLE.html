@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Code Intelligence Platform – Overview</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #e8f5f0;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .diagram {
+      width: 900px;
+      padding: 36px 40px 44px;
+    }
+
+    /* ── Title ── */
+    .title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 36px;
+    }
+    .title-bar {
+      width: 5px;
+      height: 42px;
+      background: #2ecc71;
+      border-radius: 3px;
+      flex-shrink: 0;
+    }
+    .title h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1a1a2e;
+      line-height: 1.3;
+    }
+    .title .sub {
+      font-size: 13px;
+      font-weight: 400;
+      color: #555;
+      margin-top: 3px;
+    }
+
+    /* ── Flow row ── */
+    .flow {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0;
+      margin-bottom: 32px;
+    }
+
+    /* Step card */
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      width: 148px;
+      flex-shrink: 0;
+    }
+    .step-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      line-height: 1;
+    }
+    .step-box {
+      border-radius: 12px;
+      padding: 14px 10px 12px;
+      width: 100%;
+      border: 2px solid;
+    }
+    .step-num {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      opacity: 0.65;
+      margin-bottom: 4px;
+    }
+    .step-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+      margin-bottom: 5px;
+    }
+    .step-desc {
+      font-size: 11px;
+      font-weight: 400;
+      line-height: 1.5;
+      opacity: 0.85;
+    }
+
+    /* Color variants */
+    .step-gold  .step-box { background: #fff8dc; border-color: #c8a800; color: #5a4000; }
+    .step-blue  .step-box { background: #e8f4ff; border-color: #5b9bd5; color: #1a3a5c; }
+    .step-purple .step-box { background: #ede7f6; border-color: #9c6fd6; color: #3a1a6e; }
+    .step-green .step-box { background: #e8f8f0; border-color: #27ae60; color: #145a32; }
+    .step-teal  .step-box { background: #d4f5e2; border-color: #27ae60; color: #145a32; }
+
+    /* Arrow between steps */
+    .arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 36px;
+      flex-shrink: 0;
+      padding-top: 40px; /* align with box vertically */
+    }
+    .arrow-line {
+      width: 24px;
+      height: 2px;
+      background: #555;
+      position: relative;
+    }
+    .arrow-line::after {
+      content: '';
+      position: absolute;
+      right: -6px;
+      top: 50%;
+      transform: translateY(-50%);
+      border-top: 5px solid transparent;
+      border-bottom: 5px solid transparent;
+      border-left: 7px solid #555;
+    }
+
+    /* ── Value strip ── */
+    .value-strip {
+      background: #d4f5e2;
+      border: 2px solid #27ae60;
+      border-radius: 12px;
+      padding: 18px 28px;
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      margin-bottom: 28px;
+      gap: 8px;
+    }
+    .value-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      flex: 1;
+    }
+    .value-item .big {
+      font-size: 28px;
+      font-weight: 800;
+      color: #145a32;
+      line-height: 1;
+    }
+    .value-item .label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #1e8449;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+    .value-divider {
+      width: 1px;
+      height: 48px;
+      background: #a8d5b5;
+    }
+
+    /* ── Bottom two-col ── */
+    .bottom-row {
+      display: flex;
+      gap: 16px;
+    }
+    .bottom-col {
+      flex: 1;
+      border-radius: 12px;
+      padding: 18px 20px;
+      border: 2px dashed #555;
+    }
+    .bottom-col-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 12px;
+    }
+    .chip-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip {
+      border-radius: 50px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 2px solid;
+      display: inline-block;
+    }
+    .chip-purple { background: #f3eaff; border-color: #9c6fd6; color: #5a1fa0; }
+    .chip-green  { background: #e8f8f0; border-color: #27ae60; color: #145a32; }
+    .chip-blue   { background: #e8f0ff; border-color: #5b9bd5; color: #1a3a7c; }
+    .chip-orange { background: #fff3e0; border-color: #e67e22; color: #7d3c00; }
+
+    /* ── Spacers ── */
+    .spacer { height: 16px; }
+    .center { display: flex; justify-content: center; }
+    .note {
+      font-size: 11px;
+      color: #888;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+<div class="diagram">
+
+  <!-- Title -->
+  <div class="title">
+    <div class="title-bar"></div>
+    <div>
+      <h1>Code Intelligence Platform</h1>
+      <div class="sub">Automated security scanning · AI-powered fixes · From days to minutes</div>
+    </div>
+  </div>
+
+  <!-- 5-step flow -->
+  <div class="flow">
+
+    <div class="step step-gold">
+      <div class="step-icon">🔗</div>
+      <div class="step-box">
+        <div class="step-num">Step 1</div>
+        <div class="step-title">Connect</div>
+        <div class="step-desc">Point to any GitHub repo or run from CI</div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div></div>
+
+    <div class="step step-blue">
+      <div class="step-icon">🔍</div>
+      <div class="step-box">
+        <div class="step-num">Step 2</div>
+        <div class="step-title">Scan</div>
+        <div class="step-desc">Security · Dependencies · Secrets · Containers · IaC</div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div></div>
+
+    <div class="step step-purple">
+      <div class="step-icon">🤖</div>
+      <div class="step-box">
+        <div class="step-num">Step 3</div>
+        <div class="step-title">AI Analysis</div>
+        <div class="step-desc">LLM explains each issue and suggests a fix</div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div></div>
+
+    <div class="step step-green">
+      <div class="step-icon">📋</div>
+      <div class="step-box">
+        <div class="step-num">Step 4</div>
+        <div class="step-title">Auto-Ticket</div>
+        <div class="step-desc">GitHub Issues created for every critical finding</div>
+      </div>
+    </div>
+
+    <div class="arrow"><div class="arrow-line"></div></div>
+
+    <div class="step step-teal">
+      <div class="step-icon">✅</div>
+      <div class="step-box">
+        <div class="step-num">Step 5</div>
+        <div class="step-title">Review &amp; Ship</div>
+        <div class="step-desc">Engineer reviews AI-suggested PR · Merge · Done</div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="note">Steps 2 – 4 are fully automated · Average cycle time: under 5 minutes</div>
+
+  <!-- Value metrics strip -->
+  <div class="value-strip">
+    <div class="value-item">
+      <div class="big">8</div>
+      <div class="label">Scan types<br/>in one run</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="big">5+</div>
+      <div class="label">AI providers<br/>(Ollama, OpenAI…)</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="big">0</div>
+      <div class="label">Manual steps<br/>to get findings</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="big">Auto</div>
+      <div class="label">Fix PRs opened<br/>by the platform</div>
+    </div>
+    <div class="value-divider"></div>
+    <div class="value-item">
+      <div class="big">📈</div>
+      <div class="label">Historical trends<br/>tracked over time</div>
+    </div>
+  </div>
+
+  <!-- What it catches / What you get -->
+  <div class="bottom-row">
+
+    <div class="bottom-col">
+      <div class="bottom-col-title">🛡️ What it catches</div>
+      <div class="chip-row">
+        <span class="chip chip-purple">Security vulnerabilities</span>
+        <span class="chip chip-purple">Leaked secrets &amp; API keys</span>
+        <span class="chip chip-purple">Outdated dependencies (CVEs)</span>
+        <span class="chip chip-purple">License violations</span>
+        <span class="chip chip-purple">Cloud misconfigurations</span>
+        <span class="chip chip-purple">Container risks</span>
+        <span class="chip chip-purple">Deprecated code</span>
+      </div>
+    </div>
+
+    <div class="bottom-col">
+      <div class="bottom-col-title">🎁 What you get</div>
+      <div class="chip-row">
+        <span class="chip chip-green">Plain-English fix suggestions</span>
+        <span class="chip chip-green">Auto-created GitHub tickets</span>
+        <span class="chip chip-green">Ready-to-merge fix PRs</span>
+        <span class="chip chip-blue">Trend &amp; health dashboard</span>
+        <span class="chip chip-blue">Historical scan memory</span>
+        <span class="chip chip-orange">Release notes generated</span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</body>
+</html>

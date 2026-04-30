@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual Process &amp; Platform</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', Arial, sans-serif; background: #e8f5f0; }
+
+/* ── Tabs ── */
+.tabs { display: flex; border-bottom: 3px solid #27ae60; background: #fff; padding: 0 28px; }
+.tab-btn { padding: 11px 26px; font-size: 13px; font-weight: 600; color: #666; background: none; border: none; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -3px; transition: all 0.15s; white-space: nowrap; }
+.tab-btn.active { color: #145a32; border-bottom-color: #2ecc71; }
+.tab-btn:hover { color: #1a1a2e; }
+
+.tab-content { display: none; padding: 22px 32px 28px; }
+.tab-content.active { display: block; }
+
+/* ── Title ── */
+.title { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+.title-bar { width: 5px; height: 28px; background: #2ecc71; border-radius: 3px; flex-shrink: 0; }
+.title h1 { font-size: 18px; font-weight: 700; color: #1a1a2e; }
+
+/* ══════════════════════════════════════
+   TAB 1 — Manual vs Platform
+══════════════════════════════════════ */
+
+/* Panel wrappers */
+.panel { border-radius: 12px; padding: 16px 20px 20px; }
+.panel-manual   { background: #fff5f5; border: 2px solid #e57373; }
+.panel-platform { background: #f2faf4; border: 2px solid #66bb6a; }
+
+.panel-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.panel-title { font-size: 14px; font-weight: 700; }
+.panel-time  { font-size: 12px; font-style: italic; font-weight: 600; }
+.panel-manual .panel-title,
+.panel-manual .panel-time  { color: #c62828; }
+.panel-platform .panel-title,
+.panel-platform .panel-time { color: #2e7d32; }
+
+/* Flow layout: steps + side note */
+.flow-layout { display: flex; align-items: stretch; gap: 16px; }
+.flow-steps-col { display: flex; align-items: center; flex: 1; gap: 0; }
+
+/* Step boxes */
+.sbox {
+  flex: 1;
+  min-height: 76px;
+  border-radius: 10px;
+  padding: 10px 10px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.4;
+  gap: 4px;
+}
+.sbox-num {
+  font-size: 9px;
+  font-weight: 500;
+  opacity: 0.75;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Manual step color */
+.s-red    { background: #ef9a9a; border: 2px solid #e57373; color: #4a0000; }
+/* Platform step colors */
+.s-blue   { background: #7bafd4; border: 2px solid #5c85c8; color: #fff; }
+.s-green  { background: #66bb6a; border: 2px solid #43a047; color: #fff; }
+.s-purple { background: #b39ddb; border: 2px solid #9c6fd6; color: #fff; }
+.s-teal   { background: #4db6ac; border: 2px solid #26a69a; color: #fff; }
+.s-slate  { background: #90a4ae; border: 2px solid #78909c; color: #fff; }
+.s-sky    { background: #4fc3f7; border: 2px solid #29b6f6; color: #fff; }
+
+/* Arrow between boxes */
+.sarrow { flex-shrink: 0; width: 22px; display: flex; align-items: center; justify-content: center; }
+.sarrow::after {
+  content: '›';
+  font-size: 22px;
+  color: #999;
+  line-height: 1;
+}
+
+/* Side note card */
+.side-note {
+  width: 168px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  font-size: 11.5px;
+  line-height: 1.55;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.note-warn { background: #fffde7; border: 2px solid #fbc02d; color: #4e3400; }
+.note-info { background: #e8f5e9; border: 2px solid #66bb6a; color: #1b5e20; }
+.note-title { font-size: 12px; font-weight: 700; margin-bottom: 8px; }
+.note-item { margin-bottom: 5px; padding-left: 12px; position: relative; }
+.note-item::before { content: '•'; position: absolute; left: 0; }
+.note-highlight { font-weight: 700; margin-top: 8px; font-size: 12px; }
+
+/* Divider */
+.divider { margin: 14px 0; display: flex; align-items: center; gap: 12px; }
+.divider-line { flex: 1; border-top: 2px dashed #9c6fd6; }
+.divider-text { font-size: 11.5px; font-style: italic; color: #7b1fa2; white-space: nowrap; font-weight: 500; }
+
+/* ══════════════════════════════════════
+   TAB 2 — Platform Flow
+══════════════════════════════════════ */
+.flow2 { display: flex; align-items: flex-start; gap: 0; margin-bottom: 14px; }
+.fstep { display: flex; flex-direction: column; align-items: center; flex: 1; }
+.fbox {
+  width: 100%;
+  height: 120px;
+  border-radius: 12px;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 8px;
+  text-align: center;
+  line-height: 1.35;
+}
+.fbox-title  { font-size: 14px; font-weight: 800; margin-bottom: 6px; }
+.fbox-detail { font-size: 10.5px; font-weight: 400; opacity: 0.92; }
+.fstep-label { font-size: 10px; color: #888; margin-top: 6px; font-style: italic; }
+
+.farrow { flex-shrink: 0; width: 24px; display: flex; align-items: center; justify-content: center; height: 120px; }
+.farrow::after { content: '›'; font-size: 26px; color: #aaa; line-height: 1; }
+
+/* Bracket row */
+.bracket-row { display: flex; align-items: center; margin-bottom: 16px; }
+.bracket-spacer-sm { flex-shrink: 0; } /* matches step 1 + arrow */
+.bracket-pill {
+  border-radius: 50px;
+  padding: 5px 18px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-block;
+}
+.bp-green { background: #e8f5e9; border: 2px solid #66bb6a; color: #2e7d32; }
+.bp-blue  { background: #e3f2fd; border: 2px solid #42a5f5; color: #0d47a1; }
+
+/* Time comparison */
+.time-compare { display: flex; align-items: center; gap: 16px; }
+.time-box { flex: 1; border-radius: 12px; padding: 16px 20px; text-align: center; }
+.time-box-before { background: #fff5f5; border: 2px solid #e57373; }
+.time-box-after  { background: #f2faf4; border: 2px solid #66bb6a; }
+.time-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.time-before .time-label { color: #c62828; }
+.time-after  .time-label { color: #2e7d32; }
+.time-value { font-size: 26px; font-weight: 800; }
+.time-box-before .time-value { color: #c62828; }
+.time-box-after  .time-value { color: #2e7d32; }
+.time-sub { font-size: 11px; margin-top: 3px; }
+.time-box-before .time-sub { color: #b71c1c; }
+.time-box-after  .time-sub  { color: #388e3c; }
+.time-arrow { font-size: 28px; color: #aaa; flex-shrink: 0; }
+
+/* ══════════════════════════════════════
+   TAB 3 — Component Detail
+══════════════════════════════════════ */
+.columns { display: flex; gap: 12px; align-items: flex-start; }
+.col { border-radius: 10px; padding: 12px; border: 2px solid; flex: 1; min-width: 0; }
+.col-header { font-size: 12px; font-weight: 700; margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid rgba(0,0,0,0.12); }
+
+.col-clients   { background: #dce8fc; border-color: #3949ab; }
+.col-clients   .col-header { color: #1a237e; }
+.col-api       { background: #fffde7; border-color: #f9a825; }
+.col-api       .col-header { color: #e65100; }
+.col-service   { background: #e8f5e9; border-color: #2e7d32; }
+.col-service   .col-header { color: #1b5e20; }
+.col-analyzers { background: #fff3e0; border-color: #e65100; }
+.col-analyzers .col-header { color: #bf360c; }
+.col-support   { background: #f3e5f5; border-color: #6a1b9a; }
+.col-support   .col-header { color: #4a235a; }
+
+.cbox { border-radius: 5px; padding: 7px 8px; font-size: 11px; font-weight: 600; color: #fff; margin-bottom: 7px; line-height: 1.35; }
+.cbox:last-child { margin-bottom: 0; }
+.cb-blue   { background: #5c85c8; border: 1px solid #1e4d8c; }
+.cb-gold   { background: #c8960c; border: 1px solid #7a5c00; }
+.cb-red    { background: #d44; border: 1px solid #900; }
+.cb-green  { background: #4caf7d; border: 1px solid #1a6b2a; }
+.cb-orange { background: #e0874a; border: 1px solid #b8520a; }
+.cb-purple { background: #9c6fd6; border: 1px solid #4a235a; }
+.cb-gray   { background: #78909c; border: 1px solid #37474f; }
+.cb-dashed { border: 2px dashed #90a4ae; background: #eceff1; color: #37474f; border-radius: 5px; padding: 7px 8px; font-size: 11px; font-weight: 600; margin-bottom: 7px; line-height: 1.35; }
+
+.comp-cylinder {
+  background: #9c6fd6; border: 1px solid #4a235a; color: #fff;
+  border-radius: 50%; font-size: 10px; font-weight: 700;
+  text-align: center; margin-bottom: 7px; line-height: 1.3;
+  width: 68px; height: 68px; display: flex; align-items: center; justify-content: center;
+  margin-left: auto; margin-right: auto;
+}
+</style>
+</head>
+<body>
+
+<!-- ── Tabs ── -->
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab(0)">Manual vs Platform</button>
+  <button class="tab-btn" onclick="switchTab(1)">Platform Flow</button>
+  <button class="tab-btn" onclick="switchTab(2)">Component Detail</button>
+</div>
+
+<!-- ══════════════════════════════════════
+     TAB 1
+══════════════════════════════════════ -->
+<div class="tab-content active" id="tab-0">
+  <div class="title">
+    <div class="title-bar"></div>
+    <h1>Release Security: Manual Process vs AI-Powered Automation Pipeline</h1>
+  </div>
+
+  <!-- MANUAL PANEL -->
+  <div class="panel panel-manual">
+    <div class="panel-header">
+      <span class="panel-title">❌&nbsp; Today — Manual Process</span>
+      <span class="panel-time">⏱ 6 – 10 weeks per release cycle</span>
+    </div>
+    <div class="flow-layout">
+      <div class="flow-steps-col">
+        <div class="sbox s-red">
+          <span class="sbox-num">Step 1</span>
+          Scan performed manually
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-red">
+          <span class="sbox-num">Step 2</span>
+          Manual report generation
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-red">
+          <span class="sbox-num">Step 3</span>
+          Human review &amp; analysis of findings
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-red">
+          <span class="sbox-num">Step 4</span>
+          Assign owner · fix in repo
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-red">
+          <span class="sbox-num">Step 5</span>
+          Verify &amp; close · Release gate
+        </div>
+      </div>
+      <div class="side-note note-warn">
+        <div class="note-title">⚠ Challenges</div>
+        <div class="note-item">Time-consuming</div>
+        <div class="note-item">Dependent on manual expertise</div>
+        <div class="note-item">Prone to inconsistencies</div>
+        <div class="note-highlight" style="color:#c62828;">6–10 weeks to address issues &amp; release</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIVIDER -->
+  <div class="divider">
+    <div class="divider-line"></div>
+    <div class="divider-text">AI-Powered Automation Pipeline replaces steps 2–5 and adds automated testing &amp; deployment</div>
+    <div class="divider-line"></div>
+  </div>
+
+  <!-- PLATFORM PANEL -->
+  <div class="panel panel-platform">
+    <div class="panel-header">
+      <span class="panel-title">✅&nbsp; Proposed Solution — AI-Powered Automation Pipeline</span>
+      <span class="panel-time">⚡ Target: &lt; 2 weeks per release cycle</span>
+    </div>
+    <div class="flow-layout">
+      <div class="flow-steps-col">
+        <div class="sbox s-blue">
+          <span class="sbox-num">Step 1</span>
+          Trigger · API / CLI / CI
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-green">
+          <span class="sbox-num">Step 2</span>
+          Automated Scanning · Security · OSS · Deps · Secrets
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-purple">
+          <span class="sbox-num">Step 3</span>
+          AI Report Generation · Fix Suggestions · Issue Resolution
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-teal">
+          <span class="sbox-num">Step 4</span>
+          AI Automated Unit Test Creation &amp; Execution · Raising PR
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-sky">
+          <span class="sbox-num">Step 5</span>
+          Human Review · Merge / Approve
+        </div>
+        <div class="sarrow"></div>
+        <div class="sbox s-slate">
+          <span class="sbox-num">Step 6</span>
+          Automated Deployment
+        </div>
+      </div>
+      <div class="side-note note-info">
+        <div class="note-title">✅ Key Outcomes</div>
+        <div class="note-item">AI resolves critical + selected issues automatically</div>
+        <div class="note-item">Automated unit tests created &amp; run</div>
+        <div class="note-item">Automated deployment &amp; testing</div>
+        <div class="note-highlight" style="color:#2e7d32;">6–10 weeks → &lt; 2 weeks</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TAB 2
+══════════════════════════════════════ -->
+<div class="tab-content" id="tab-1">
+  <div class="title">
+    <div class="title-bar"></div>
+    <h1>AI-Powered Automation Pipeline — How It Works</h1>
+  </div>
+
+  <div class="flow2">
+    <div class="fstep">
+      <div class="fbox" style="background:#7bafd4;border:2px solid #5c85c8;">
+        <div class="fbox-title">Trigger</div>
+        <div class="fbox-detail">API call · CLI command · CI pipeline</div>
+      </div>
+      <div class="fstep-label">Step 1</div>
+    </div>
+    <div class="farrow"></div>
+    <div class="fstep">
+      <div class="fbox" style="background:#66bb6a;border:2px solid #43a047;">
+        <div class="fbox-title">Auto Scan</div>
+        <div class="fbox-detail">Security · OSS · Secrets · IaC · Containers</div>
+      </div>
+      <div class="fstep-label">Step 2</div>
+    </div>
+    <div class="farrow"></div>
+    <div class="fstep">
+      <div class="fbox" style="background:#b39ddb;border:2px solid #9c6fd6;">
+        <div class="fbox-title">AI Analysis</div>
+        <div class="fbox-detail">Intelligent reports · AI-assisted issue resolution</div>
+      </div>
+      <div class="fstep-label">Step 3</div>
+    </div>
+    <div class="farrow"></div>
+    <div class="fstep">
+      <div class="fbox" style="background:#4db6ac;border:2px solid #26a69a;">
+        <div class="fbox-title">Auto Test</div>
+        <div class="fbox-detail">Unit test creation &amp; execution</div>
+      </div>
+      <div class="fstep-label">Step 4</div>
+    </div>
+    <div class="farrow"></div>
+    <div class="fstep">
+      <div class="fbox" style="background:#90a4ae;border:2px solid #78909c;">
+        <div class="fbox-title">Deploy &amp; Test</div>
+        <div class="fbox-detail">AI-powered release · Automated deployment</div>
+      </div>
+      <div class="fstep-label">Step 5</div>
+    </div>
+    <div class="farrow"></div>
+    <div class="fstep">
+      <div class="fbox" style="background:#4fc3f7;border:2px solid #29b6f6;">
+        <div class="fbox-title">Review</div>
+        <div class="fbox-detail">Engineer reviews · Merge · Release gate ✓</div>
+      </div>
+      <div class="fstep-label">Step 6</div>
+    </div>
+  </div>
+
+  <!-- Bracket labels -->
+  <div class="bracket-row" style="gap:8px; margin-bottom:16px;">
+    <!-- rough spacer for step 1 + arrow -->
+    <div style="flex:1.2; flex-shrink:0;"></div>
+    <div style="flex:4; display:flex; justify-content:center;">
+      <span class="bracket-pill bp-green">⚙ Fully Automated — Steps 2 – 5</span>
+    </div>
+    <div style="flex:1.2; display:flex; justify-content:center;">
+      <span class="bracket-pill bp-blue">👤 Human in the loop</span>
+    </div>
+  </div>
+
+  <!-- Time comparison -->
+  <div class="time-compare">
+    <div class="time-box time-box-before">
+      <div class="time-label" style="color:#c62828;">Before</div>
+      <div class="time-value">6 – 10 weeks</div>
+      <div class="time-sub">manual process per release cycle</div>
+    </div>
+    <div class="time-arrow">→</div>
+    <div class="time-box time-box-after">
+      <div class="time-label" style="color:#2e7d32;">Target</div>
+      <div class="time-value">&lt; 2 weeks</div>
+      <div class="time-sub">AI-powered automation pipeline</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════
+     TAB 3
+══════════════════════════════════════ -->
+<div class="tab-content" id="tab-2">
+  <div class="title">
+    <div class="title-bar"></div>
+    <h1>Code Intelligence Platform — Component Detail</h1>
+  </div>
+
+  <div class="columns">
+    <div class="col col-clients">
+      <div class="col-header">Clients</div>
+      <div class="cbox cb-blue">React Dashboard</div>
+      <div class="cbox cb-blue">CLI  scan_github_repo.py</div>
+      <div class="cbox cb-blue">CI / GitHub Actions</div>
+    </div>
+
+    <div class="col col-api">
+      <div class="col-header">API Layer (FastAPI)</div>
+      <div class="cbox cb-gold">POST /api/scan</div>
+      <div class="cbox cb-gold">POST /api/github/scan</div>
+      <div class="cbox cb-gold">GET /api/scan/{id}</div>
+      <div class="cbox cb-red">POST /api/scan/{id}/remediate ★</div>
+      <div class="comp-cylinder">SCAN_STORE<br>(in-memory)</div>
+    </div>
+
+    <div class="col col-service">
+      <div class="col-header">Service Layer</div>
+      <div class="cbox cb-green">ScanService<br>fetch → clone → detect → build → orchestrate → LLM → RAG</div>
+      <div class="cbox cb-green">OrchestratorAgent<br>decide → run → combine</div>
+      <div class="cbox cb-red">PRAgent<br>apply fixes → push → PR</div>
+    </div>
+
+    <div class="col col-analyzers">
+      <div class="col-header">Analyzers</div>
+      <div class="cbox cb-orange">Security  Bandit / SpotBugs / Semgrep</div>
+      <div class="cbox cb-orange">OSS  pip-licenses / OWASP</div>
+      <div class="cbox cb-orange">Change  git diff</div>
+      <div class="cbox cb-orange">Deprecation  AST rules</div>
+      <div class="cbox cb-orange">Secrets  Gitleaks</div>
+      <div class="cbox cb-orange">Infra / IaC  Checkov</div>
+      <div class="cbox cb-orange">Container  Trivy</div>
+      <div class="cbox cb-orange">GitHub Analyzer (MCP)</div>
+    </div>
+
+    <div class="col col-support">
+      <div class="col-header">Support Services</div>
+      <div class="cbox cb-purple">LLMService<br>Ollama / Groq / OpenAI / HF / Bedrock</div>
+      <div class="cbox cb-purple">RAGService  FAISS / Qdrant</div>
+      <div class="cbox cb-gray">MCPGitHubService → github.com (10 tools)</div>
+      <div class="cbox cb-purple">ProjectDetector  language detection</div>
+      <div class="cbox cb-purple">ProjectBuilder  Maven / Gradle</div>
+      <div class="cb-dashed">LangSmith tracing</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(i) {
+  document.querySelectorAll('.tab-btn').forEach((b,j) => b.classList.toggle('active', i===j));
+  document.querySelectorAll('.tab-content').forEach((c,j) => c.classList.toggle('active', i===j));
+}
+</script>
+</body>
+</html>
