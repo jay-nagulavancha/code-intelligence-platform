@@ -263,7 +263,56 @@ def print_scan_results(result: dict):
                 else:
                     print(f"    Review comment: ⏭️  skipped ({review_info.get('reason', 'unknown')})")
         else:
-            print(f"    ⏭️  No PR created ({remediation_pr.get('reason', 'unknown')})")
+            reason = remediation_pr.get("reason", "unknown")
+            mode = remediation_pr.get("mode", "")
+            print(f"    ⏭️  No PR created (reason={reason}, mode={mode or 'n/a'})")
+            _remediation_hints = {
+                "no_fixable_issues": (
+                    "Deterministic mode only auto-fixes SpotBugs EI_EXPOSE_REP / EI_EXPOSE_REP2 / "
+                    "HE_EQUALS_USE_HASHCODE; Semgrep-only findings are skipped. "
+                    "Use --remediation-mode nondeterministic for broader LLM patches."
+                ),
+                "no_changes_applied": (
+                    "SpotBugs fixes matched files but no edits were applied (e.g. only @Entity "
+                    "classes where defensive-copy fixes are skipped)."
+                ),
+                "llm_unavailable": (
+                    "Nondeterministic remediation requires a working LLM (GROQ_API_KEY, OPENAI_API_KEY, "
+                    "AWS Bedrock env, or local Ollama). Check the LLM line in Service status above."
+                ),
+                "no_file_scoped_issues": (
+                    "No findings could be mapped to existing source files under the clone "
+                    "(check SpotBugs/Semgrep paths vs monorepo layout)."
+                ),
+                "no_valid_ai_fixes": (
+                    "LLM returned no change that passed validation (syntax/git diff). "
+                    "See remediation_pr.details in the saved JSON."
+                ),
+                "github_unavailable": "GITHUB_TOKEN is missing or invalid for API calls.",
+            }
+            hint = _remediation_hints.get(reason)
+            if hint:
+                print(f"       Hint: {hint}")
+            details = remediation_pr.get("details")
+            if isinstance(details, list):
+                for row in details[:8]:
+                    if isinstance(row, dict):
+                        fn = row.get("file", "")
+                        st = row.get("status", "")
+                        rs = row.get("reason", "")
+                        print(f"       • {fn} [{st}] {rs}")
+                    else:
+                        print(f"       • {row}")
+            extra = remediation_pr.get("extra")
+            if isinstance(extra, dict):
+                ed = extra.get("details")
+                if isinstance(ed, list) and not details:
+                    for row in ed[:8]:
+                        if isinstance(row, dict):
+                            print(
+                                f"       • {row.get('file','')} [{row.get('status','')}] "
+                                f"{row.get('reason','')}"
+                            )
 
 
 def save_results(owner: str, repo: str, result: dict):
@@ -295,8 +344,11 @@ def main():
     parser.add_argument("owner", help="GitHub repository owner")
     parser.add_argument("repo", help="GitHub repository name")
     parser.add_argument(
-        "--no-issues", action="store_true",
-        help="Skip creating GitHub issues for findings"
+        "--no-issues",
+        "--no-issue",
+        action="store_true",
+        dest="no_issues",
+        help="Skip creating GitHub issues for findings",
     )
     parser.add_argument(
         "--no-rag", action="store_true",
@@ -308,9 +360,11 @@ def main():
     )
     parser.add_argument(
         "--scan-types",
+        "--scan-type",
         nargs="+",
         metavar="TYPE",
         default=["security", "oss"],
+        dest="scan_types",
         help="Which analyzers to run (see Supported scan types below; default: security oss)",
     )
     parser.add_argument(
