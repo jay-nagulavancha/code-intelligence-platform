@@ -81,7 +81,10 @@ def print_service_status(llm: LLMService, rag, github: MCPGitHubService):
     else:
         try:
             avail = rag.is_available()
-            print(f"    RAG     : {'✅ ' + rag.vector_db_type if avail else '⚠️  unavailable'}")
+            if avail:
+                print(f"    RAG     : ✅ {rag.vector_db_type}")
+            else:
+                print(f"    RAG     : {rag.get_status_message()}")
         except Exception:
             print(f"    RAG     : ⚠️  failed to initialize")
     gh_status = "✅ connected" if github.is_available() else "❌ no token"

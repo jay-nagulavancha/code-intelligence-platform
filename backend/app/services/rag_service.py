@@ -208,15 +208,35 @@ class RAGService:
                 from qdrant_client.models import Distance, VectorParams
             self._embeddings = self._load_sentence_transformer()
 
-        qdrant_url = os.getenv("QDRANT_URL", "localhost")
-        qdrant_port = int(os.getenv("QDRANT_PORT", "6333"))
-        qdrant_timeout = int(os.getenv("QDRANT_TIMEOUT_SEC", "15"))
-
-        self._client = QdrantClient(
-            host=qdrant_url,
-            port=qdrant_port,
-            timeout=qdrant_timeout,
+        timeout = int(os.getenv("QDRANT_TIMEOUT_SEC", "15"))
+        prefer_grpc = os.getenv("QDRANT_PREFER_GRPC", "false").lower() in (
+            "1",
+            "true",
+            "yes",
         )
+
+        raw = (os.getenv("QDRANT_URL") or "").strip()
+        common_kw = {
+            "timeout": timeout,
+            "check_compatibility": False,
+            "prefer_grpc": prefer_grpc,
+        }
+
+        try:
+            if raw.startswith("http://") or raw.startswith("https://"):
+                self._client = QdrantClient(url=raw.rstrip("/"), **common_kw)
+            else:
+                host = raw or "localhost"
+                port = int(os.getenv("QDRANT_PORT", "6333"))
+                self._client = QdrantClient(host=host, port=port, **common_kw)
+        except Exception as e:
+            hint = (
+                "Use QDRANT_URL=http://127.0.0.1:6333 from the host, or "
+                "http://qdrant:6333 from another Docker container on the same network. "
+                "Is `docker compose up qdrant` (or your Qdrant service) running?"
+            )
+            raise RuntimeError(f"{e}. {hint}") from e
+
         collection_name = "code_intelligence"
 
         try:
