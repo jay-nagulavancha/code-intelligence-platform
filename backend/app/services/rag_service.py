@@ -56,6 +56,15 @@ class RAGService:
         self._client = None
         self._collection_name: Optional[str] = None
 
+    def _reset_rag_init_state(self) -> None:
+        """Clear partial init so we can retry (e.g. Qdrant → FAISS fallback)."""
+        self._embeddings = None
+        self._vector_db = None
+        self._client = None
+        self._collection_name = None
+        self._metadata = []
+        self._initialized = False
+
     # ------------------------------------------------------------------
     # Initialisation (lazy, quiet)
     # ------------------------------------------------------------------
@@ -284,7 +293,29 @@ class RAGService:
             if self.vector_db_type == "faiss":
                 self._initialize_faiss()
             elif self.vector_db_type == "qdrant":
-                self._initialize_qdrant()
+                strict = os.getenv("RAG_STRICT_QDRANT", "").lower() in (
+                    "1",
+                    "true",
+                    "yes",
+                )
+                try:
+                    self._initialize_qdrant()
+                except Exception as qerr:
+                    if strict:
+                        raise
+                    self._reset_rag_init_state()
+                    brief = str(qerr).strip().split("\n")[0]
+                    if len(brief) > 160:
+                        brief = brief[:157] + "..."
+                    if not silent:
+                        print(
+                            "  RAG: Qdrant not reachable — using local FAISS instead "
+                            f"({brief}). Set RAG_STRICT_QDRANT=1 to fail without fallback.\n",
+                            flush=True,
+                        )
+                    logger.warning("RAG: Qdrant unavailable, falling back to FAISS: %s", qerr)
+                    self.vector_db_type = "faiss"
+                    self._initialize_faiss()
             else:
                 self._init_error = f"Unsupported vector DB type: {self.vector_db_type}"
         except ImportError:
