@@ -15,6 +15,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.services.mcp_github_service import MCPGitHubService
+from app.services.claude_agent_service import ClaudeAgentService
 from app.services.llm_service import LLMService
 
 
@@ -25,9 +26,11 @@ class PRAgent:
         self,
         github_service: Optional[MCPGitHubService] = None,
         llm_service: Optional[LLMService] = None,
+        claude_agent_service: Optional[ClaudeAgentService] = None,
     ):
         self.github_service = github_service or MCPGitHubService()
         self.llm_service = llm_service or LLMService()
+        self.claude_agent_service = claude_agent_service or ClaudeAgentService()
         self.default_mode = os.getenv("REMEDIATION_MODE", "deterministic").strip().lower()
         self.max_attempts = int(os.getenv("REMEDIATION_MAX_ATTEMPTS", "2"))
         self.max_files = int(os.getenv("REMEDIATION_MAX_FILES", "3"))
@@ -41,7 +44,7 @@ class PRAgent:
 
     def _effective_mode(self, remediation_mode: Optional[str]) -> str:
         mode = (remediation_mode or self.default_mode or "deterministic").strip().lower()
-        if mode not in ("deterministic", "nondeterministic"):
+        if mode not in ("deterministic", "nondeterministic", "claude_agent"):
             return "deterministic"
         return mode
 
@@ -1027,6 +1030,83 @@ Keep it concise and practical.
         mode = self._effective_mode(remediation_mode)
         if not self.github_service.is_available():
             return {"created": False, "reason": "github_unavailable", "mode": mode}
+
+        if mode == "claude_agent":
+            file_issue_map = self._collect_nondeterministic_issues_by_file(
+                repo_path=repo_path,
+                scan_result=scan_result,
+            )
+            rel_issue_map = {
+                os.path.relpath(path, repo_path): issues for path, issues in file_issue_map.items()
+            }
+            ai_fix_result = self.claude_agent_service.apply_fixes(
+                repo_path=repo_path,
+                file_issue_map=rel_issue_map,
+                max_files=self.max_files,
+            )
+            changed_files = ai_fix_result.get("changed_files", [])
+            if not changed_files:
+                return {
+                    "created": False,
+                    "reason": ai_fix_result.get("reason", "no_valid_ai_fixes"),
+                    "mode": mode,
+                    "details": ai_fix_result.get("details", []),
+                    "agent_result": ai_fix_result.get("agent_result"),
+                }
+
+            test_result = self._maybe_generate_tests_for_fixes(
+                repo_path=repo_path,
+                changed_files=changed_files,
+                scan_result=scan_result,
+            )
+            changed_files = changed_files + [
+                p for p in test_result.get("generated_files", []) if p not in changed_files
+            ]
+
+            branch_name = f"cip/{title_prefix}-claude-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}"
+            commit_msg = (
+                "fix: apply Claude Agent SDK remediations from analyzer findings\n\n"
+                "- run Claude coding agent against file-scoped issues\n"
+                "- commit only effective repository diffs\n"
+                "- generate unit tests for changed files when feasible\n"
+            )
+            title = "fix: Claude Agent SDK remediation for analyzer findings"
+            body_lines = [
+                "## Claude Agent SDK remediation PR",
+                "",
+                "This PR was generated with `remediation_mode=claude_agent`.",
+                "",
+                "### Validation gates",
+                "- File-scoped findings provided as input",
+                "- Effective git diff required before acceptance",
+                "- Unit test generation attempted for changed files",
+                "",
+                "### Files changed",
+            ]
+            for f in changed_files:
+                body_lines.append(f"- `{os.path.relpath(f, repo_path)}`")
+            body_lines.append("")
+            body_lines.append("### Notes")
+            body_lines.append("- Please run full project tests before merging.")
+            body = "\n".join(body_lines)
+            return self._commit_push_and_create_pr(
+                repo_path=repo_path,
+                owner=owner,
+                repo=repo,
+                changed_files=changed_files,
+                base_branch=base_branch,
+                branch_name=branch_name,
+                commit_msg=commit_msg,
+                title=title,
+                body=body,
+                mode=mode,
+                scan_result=scan_result,
+                extra={
+                    "details": ai_fix_result.get("details", []),
+                    "agent_result": ai_fix_result.get("agent_result"),
+                    "test_generation": test_result,
+                },
+            )
 
         if mode == "nondeterministic":
             ai_fix_result = self._apply_nondeterministic_fixes(

@@ -67,8 +67,10 @@ class RemediateRequest(BaseModel):
     @field_validator("remediation_mode")
     @classmethod
     def validate_mode(cls, v):
-        if v is not None and v not in ("deterministic", "nondeterministic"):
-            raise ValueError("remediation_mode must be 'deterministic' or 'nondeterministic'")
+        if v is not None and v not in ("deterministic", "nondeterministic", "claude_agent"):
+            raise ValueError(
+                "remediation_mode must be 'deterministic', 'nondeterministic', or 'claude_agent'"
+            )
         return v
 
 

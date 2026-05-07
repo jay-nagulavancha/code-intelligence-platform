@@ -257,7 +257,7 @@ def test_missing_scan_id_404(scan_id):
 
 # Feature: remediation-api-endpoint, Property 3: create_fix_pr called with correct arguments
 @given(
-    mode=st.sampled_from(["deterministic", "nondeterministic"]),
+    mode=st.sampled_from(["deterministic", "nondeterministic", "claude_agent"]),
     owner=st.text(min_size=1, max_size=20,
                   alphabet=st.characters(whitelist_categories=("Lu", "Ll", "Nd"),
                                          whitelist_characters="-_")),
@@ -296,7 +296,7 @@ def test_correct_args_passed(mode, owner, repo):
 # Feature: remediation-api-endpoint, Property 4: response contains all required fields
 @given(
     created=st.booleans(),
-    mode=st.sampled_from(["deterministic", "nondeterministic"]),
+    mode=st.sampled_from(["deterministic", "nondeterministic", "claude_agent"]),
 )
 @settings(max_examples=100)
 def test_response_shape(created, mode):
@@ -360,7 +360,7 @@ def test_owner_repo_derived(owner, repo):
 # Feature: remediation-api-endpoint, Property 6: invalid remediation_mode returns 422
 @given(
     mode=st.text(min_size=1).filter(
-        lambda s: s not in ("deterministic", "nondeterministic")
+        lambda s: s not in ("deterministic", "nondeterministic", "claude_agent")
     )
 )
 @settings(max_examples=100, deadline=None)

@@ -373,7 +373,7 @@ def main():
     )
     parser.add_argument(
         "--remediation-mode",
-        choices=["deterministic", "nondeterministic"],
+        choices=["deterministic", "nondeterministic", "claude_agent"],
         default=None,
         help="Remediation strategy for PR agent (default: REMEDIATION_MODE env or deterministic)",
     )
