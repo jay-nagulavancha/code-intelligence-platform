@@ -397,14 +397,18 @@ class ScanService:
                 # --- Step 6: Auto-fix PR creation ---
                 if create_pr:
                     progress(6, "Applying safe auto-fixes and creating pull request...")
-                    pr_result = self.pr_agent.create_fix_pr(
-                        repo_path=temp_dir,
-                        owner=owner,
-                        repo=repo,
-                        scan_result=result,
-                        base_branch=project_context.get("default_branch", "main"),
-                        remediation_mode=remediation_mode,
-                    )
+                    try:
+                        pr_result = self.pr_agent.create_fix_pr(
+                            repo_path=temp_dir,
+                            owner=owner,
+                            repo=repo,
+                            scan_result=result,
+                            base_branch=project_context.get("default_branch", "main"),
+                            remediation_mode=remediation_mode,
+                        )
+                    except Exception as pr_exc:
+                        print(f"PR creation failed (non-fatal): {pr_exc}")
+                        pr_result = {"created": False, "reason": str(pr_exc), "mode": remediation_mode}
                     result["remediation_pr"] = pr_result
                     if callable(io_trace):
                         io_trace(

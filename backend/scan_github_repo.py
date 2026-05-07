@@ -412,6 +412,7 @@ def main():
     if use_llm:
         llm_service.warmup()
 
+    result = None
     try:
         result = scan_service.scan_github_repo(
             owner=args.owner,
@@ -424,14 +425,16 @@ def main():
             use_llm=use_llm,
             on_progress=on_progress,
         )
+    except Exception as e:
+        print(f"\n  ❌ Scan error: {e}")
+        import traceback
+        traceback.print_exc()
 
+    if result is not None:
         print_scan_results(result)
         save_results(args.owner, args.repo, result)
 
-    except Exception as e:
-        print(f"\n  ❌ Scan failed: {e}")
-        import traceback
-        traceback.print_exc()
+    if result is None:
         sys.exit(1)
 
     print(f"\n{'=' * 70}")

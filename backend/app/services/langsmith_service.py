@@ -137,6 +137,7 @@ class LangSmithTracer:
             # Only log if this is a tracing-layer failure, not a re-raise of the
             # caller's exception (which already has its own error handling).
             print(f"LangSmith trace failed: {e}")
+            raise
 
     def record_component_io(
         self,
