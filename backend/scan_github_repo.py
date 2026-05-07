@@ -19,7 +19,7 @@ from datetime import datetime
 # Load environment variables
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(override=True)
 except ImportError:
     env_path = os.path.join(os.path.dirname(__file__), '.env')
     if os.path.exists(env_path):
