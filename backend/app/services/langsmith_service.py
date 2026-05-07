@@ -111,6 +111,7 @@ class LangSmithTracer:
             yield None
             return
 
+        run_tree = None
         try:
             with self._trace_fn(
                 name,
@@ -119,10 +120,23 @@ class LangSmithTracer:
                 tags=tags or [],
                 metadata=self._safe_serialize(metadata or {}),
             ) as run_tree:
-                yield run_tree
+                try:
+                    yield run_tree
+                except Exception as inner_exc:
+                    # Record the error on the span then re-raise so the caller's
+                    # exception propagates normally. Without this the contextmanager
+                    # generator never stops after throw() and Python raises
+                    # RuntimeError("generator didn't stop after throw()").
+                    try:
+                        if run_tree is not None:
+                            run_tree.add_outputs({"error": str(inner_exc)})
+                    except Exception:
+                        pass
+                    raise
         except Exception as e:
+            # Only log if this is a tracing-layer failure, not a re-raise of the
+            # caller's exception (which already has its own error handling).
             print(f"LangSmith trace failed: {e}")
-            yield None
 
     def record_component_io(
         self,
