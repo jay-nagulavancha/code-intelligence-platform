@@ -33,7 +33,7 @@ class PRAgent:
         self.claude_agent_service = claude_agent_service or ClaudeAgentService()
         self.default_mode = os.getenv("REMEDIATION_MODE", "deterministic").strip().lower()
         self.max_attempts = int(os.getenv("REMEDIATION_MAX_ATTEMPTS", "2"))
-        self.max_files = int(os.getenv("REMEDIATION_MAX_FILES", "3"))
+        self.max_files = int(os.getenv("REMEDIATION_MAX_FILES", "10"))
         self.generate_tests_enabled = os.getenv("REMEDIATION_GENERATE_TESTS", "true").lower() in (
             "1", "true", "yes", "on"
         )
@@ -134,8 +134,12 @@ class PRAgent:
     ) -> Dict[str, List[Dict[str, Any]]]:
         raw_results = scan_result.get("raw_results", {})
         allowed_ext = {".py", ".java", ".js", ".jsx", ".ts", ".tsx"}
-        by_file: Dict[str, List[Dict[str, Any]]] = {}
 
+        _SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "": 5}
+
+        # Collect all resolvable issues first, then sort by severity so the
+        # most critical files are always included within the max_files cap.
+        all_issues: List[Dict[str, Any]] = []
         for analyzer_name in ("security", "oss", "deprecation"):
             for issue in raw_results.get(analyzer_name, []):
                 file_path = self._resolve_issue_file_path(repo_path, issue)
@@ -143,10 +147,19 @@ class PRAgent:
                     continue
                 if os.path.splitext(file_path)[1].lower() not in allowed_ext:
                     continue
+                all_issues.append({"_file_path": file_path, "analyzer": analyzer_name, **issue})
 
-                if file_path not in by_file and len(by_file) >= self.max_files:
-                    continue
-                by_file.setdefault(file_path, []).append({"analyzer": analyzer_name, **issue})
+        # Sort by severity so critical/high files are picked first
+        all_issues.sort(
+            key=lambda i: _SEV_ORDER.get((i.get("severity") or "").lower(), 5)
+        )
+
+        by_file: Dict[str, List[Dict[str, Any]]] = {}
+        for issue in all_issues:
+            file_path = issue.pop("_file_path")
+            if file_path not in by_file and len(by_file) >= self.max_files:
+                continue
+            by_file.setdefault(file_path, []).append(issue)
         return by_file
 
     def _validate_candidate_change(
