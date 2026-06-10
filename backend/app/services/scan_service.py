@@ -739,6 +739,8 @@ class ScanService:
             lines.append("### Recommended Fixes (AI-Generated)")
             lines.append("")
             for i, sug in enumerate(suggestions[:10], 1):
+                if not isinstance(sug, dict):
+                    continue
                 explanation = sug.get("explanation", sug.get("issue", ""))
                 fix = sug.get("fix", sug.get("code_fix", sug.get("suggestion", "")))
                 lines.append(f"**{i}. {explanation}**")

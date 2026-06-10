@@ -137,8 +137,25 @@ class PRAgent:
 
         _SEV_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4, "": 5}
 
-        # Collect all resolvable issues first, then sort by severity so the
-        # most critical files are always included within the max_files cap.
+        # Build a lookup from the LLM's vulnerability_suggestions (stored under report,
+        # not llm_enhanced, due to how scan_result is serialized). Keyed by bug_type so
+        # we can enrich raw findings that have an empty message field.
+        llm_suggestions = (scan_result.get("report") or {}).get("vulnerability_suggestions", [])
+        if not isinstance(llm_suggestions, list):
+            llm_suggestions = []
+        sug_by_bug_type: Dict[str, Dict[str, Any]] = {}
+        for sug in llm_suggestions:
+            bt = (sug.get("bug_type") or "").strip()
+            if bt and bt not in sug_by_bug_type:
+                sug_by_bug_type[bt] = sug
+
+        # Paths containing these segments are intentional demo/test anti-pattern files.
+        # Auto-remediating them is wasteful and causes agent timeouts.
+        _skip_path_segments = {"demo", "test", "tests", "antipattern", "antipatterns"}
+
+        # Collect all resolvable issues first, enrich with LLM guidance, then sort by
+        # effective severity so the most critical files are always included within the
+        # max_files cap.
         all_issues: List[Dict[str, Any]] = []
         for analyzer_name in ("security", "oss", "deprecation"):
             for issue in raw_results.get(analyzer_name, []):
@@ -147,9 +164,25 @@ class PRAgent:
                     continue
                 if os.path.splitext(file_path)[1].lower() not in allowed_ext:
                     continue
-                all_issues.append({"_file_path": file_path, "analyzer": analyzer_name, **issue})
+                path_parts = {p.lower() for p in file_path.replace("\\", "/").split("/")}
+                if path_parts & _skip_path_segments:
+                    continue
+                enriched = {"_file_path": file_path, "analyzer": analyzer_name, **issue}
+                sug = sug_by_bug_type.get((issue.get("bug_type") or "").strip())
+                if sug:
+                    # Fill empty message from LLM explanation
+                    if not enriched.get("message"):
+                        enriched["message"] = sug.get("explanation", "")
+                    enriched["suggested_fix"] = sug.get("fix", "")
+                    enriched["code_example"] = sug.get("code_example", "")
+                    # Promote severity if the LLM assessed it as higher than SpotBugs did
+                    llm_priority = (sug.get("priority") or "").lower()
+                    raw_sev = (enriched.get("severity") or "").lower()
+                    if _SEV_ORDER.get(llm_priority, 5) < _SEV_ORDER.get(raw_sev, 5):
+                        enriched["severity"] = llm_priority
+                all_issues.append(enriched)
 
-        # Sort by severity so critical/high files are picked first
+        # Sort by effective severity so critical/high files are picked first
         all_issues.sort(
             key=lambda i: _SEV_ORDER.get((i.get("severity") or "").lower(), 5)
         )
@@ -432,9 +465,14 @@ Generate practical unit tests that validate the remediation behavior and edge ca
         diff = self._run_git(repo_path, ["diff", "--", rel])
         if diff.returncode != 0:
             return False, f"git_diff_failed: {diff.stderr}"
-        if not diff.stdout.strip():
-            return False, "no_effective_test_diff"
-        return True, "validated"
+        if diff.stdout.strip():
+            return True, "validated"
+        # git diff only covers tracked files. New test files are untracked (??),
+        # so check git status to catch them.
+        status = self._run_git(repo_path, ["status", "--porcelain", "--", rel])
+        if status.returncode == 0 and status.stdout.strip().startswith("??"):
+            return True, "validated_new_file"
+        return False, "no_effective_test_diff"
 
     def _maybe_generate_tests_for_fixes(
         self,
@@ -1059,12 +1097,22 @@ Keep it concise and practical.
             )
             changed_files = ai_fix_result.get("changed_files", [])
             if not changed_files:
+                import sys
+                agent_result = ai_fix_result.get("agent_result") or ai_fix_result
+                stderr = ai_fix_result.get("stderr", [])
+                print(
+                    f"[pr_agent] claude_agent fix failed — reason={ai_fix_result.get('reason')} "
+                    f"cwd={ai_fix_result.get('cwd')} "
+                    f"env_keys={ai_fix_result.get('subprocess_env_keys')} "
+                    f"stderr={stderr[:5]}",
+                    file=sys.stderr,
+                )
                 return {
                     "created": False,
                     "reason": ai_fix_result.get("reason", "no_valid_ai_fixes"),
                     "mode": mode,
                     "details": ai_fix_result.get("details", []),
-                    "agent_result": ai_fix_result.get("agent_result"),
+                    "agent_result": agent_result,
                 }
 
             test_result = self._maybe_generate_tests_for_fixes(
