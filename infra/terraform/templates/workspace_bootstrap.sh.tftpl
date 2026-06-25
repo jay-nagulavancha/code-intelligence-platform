@@ -1,0 +1,126 @@
+#!/bin/bash
+# Bootstrap script for code-intelligence-workspace
+# Terraform template variables: ${username}, ${vscode_password}, ${project_name}
+
+set -euo pipefail
+
+# Redirect all output to log file
+exec >> /var/log/user-data.log 2>&1
+
+echo "=== Step 1: System update and base packages ==="
+apt-get update && apt-get upgrade -y
+apt-get install -y git curl wget unzip jq build-essential ca-certificates \
+  software-properties-common apt-transport-https gnupg
+
+echo "=== Step 2: Docker CE + Compose plugin ==="
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
+
+# Build the apt source line without subshells to avoid escaping issues
+ARCH=$(dpkg --print-architecture)
+source /etc/os-release
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $VERSION_CODENAME stable" \
+  > /etc/apt/sources.list.d/docker.list
+
+apt-get update
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable docker
+systemctl start docker
+
+echo "=== Step 3: AWS CLI v2 ==="
+cd /tmp
+curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip -q awscliv2.zip
+./aws/install
+rm -rf awscliv2.zip aws/
+
+echo "=== Step 4: Python 3.13 via deadsnakes PPA ==="
+add-apt-repository ppa:deadsnakes/ppa -y
+apt-get update
+apt-get install -y python3.13 python3.13-venv python3.13-dev python3-pip
+# Do NOT replace system python3 — it breaks apt_pkg and other Ubuntu tools
+# Make python3.13 available as an explicit command only
+ln -sf /usr/bin/python3.13 /usr/local/bin/python3.13
+pip3 install --upgrade pip
+pip3 install bandit pip-licenses
+
+echo "=== Step 5: Java toolchain ==="
+apt-get install -y openjdk-8-jdk openjdk-11-jdk openjdk-17-jdk openjdk-21-jdk maven gradle
+echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> /etc/environment
+
+echo "=== Step 6: SpotBugs and OWASP Dependency-Check ==="
+SPOTBUGS_VERSION="4.8.6"
+curl -fsSL "https://github.com/spotbugs/spotbugs/releases/download/$SPOTBUGS_VERSION/spotbugs-$SPOTBUGS_VERSION.tgz" \
+  -o /tmp/spotbugs.tgz
+mkdir -p /opt/spotbugs
+tar -xzf /tmp/spotbugs.tgz -C /opt/spotbugs --strip-components=1
+rm /tmp/spotbugs.tgz
+
+DC_VERSION="10.0.4"
+curl -fsSL "https://github.com/jeremylong/DependencyCheck/releases/download/v$DC_VERSION/dependency-check-$DC_VERSION-release.zip" \
+  -o /tmp/dependency-check.zip
+unzip -q /tmp/dependency-check.zip -d /tmp/dc-extract
+mv /tmp/dc-extract/dependency-check /opt/dependency-check
+rm -rf /tmp/dependency-check.zip /tmp/dc-extract
+
+sed -i 's|^PATH=.*|PATH="/opt/spotbugs/bin:/opt/dependency-check/bin:/usr/local/bin:/usr/bin:/bin"|' /etc/environment
+grep -q "^PATH=" /etc/environment || echo 'PATH="/opt/spotbugs/bin:/opt/dependency-check/bin:/usr/local/bin:/usr/bin:/bin"' >> /etc/environment
+
+echo "=== Step 7: Workspace user ==="
+USERNAME="${username}"
+useradd -m -s /bin/bash "$USERNAME" || true
+echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
+chmod 0440 /etc/sudoers.d/$USERNAME
+
+mkdir -p /home/$USERNAME/.ssh
+cp /home/ubuntu/.ssh/authorized_keys /home/$USERNAME/.ssh/authorized_keys
+chown -R $USERNAME:$USERNAME /home/$USERNAME/.ssh
+chmod 700 /home/$USERNAME/.ssh
+chmod 600 /home/$USERNAME/.ssh/authorized_keys
+
+usermod -aG docker $USERNAME
+
+echo "=== Step 8: Project directory and .env file ==="
+PROJECT_DIR="/home/$USERNAME/code-intelligence-platform"
+mkdir -p "$PROJECT_DIR"
+cat > "$PROJECT_DIR/.env" <<'ENVEOF'
+GITHUB_TOKEN=your_github_token_here
+GROQ_API_KEY=your_groq_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here
+LANGSMITH_API_KEY=your_langsmith_api_key_here
+ENVEOF
+chown -R $USERNAME:$USERNAME "$PROJECT_DIR"
+
+echo "=== Step 9: code-server (VS Code Server) ==="
+export HOME=/root
+curl -fsSL https://code-server.dev/install.sh | sh
+
+mkdir -p /home/$USERNAME/.config/code-server
+cat > /home/$USERNAME/.config/code-server/config.yaml <<CSEOF
+bind-addr: 0.0.0.0:8080
+auth: password
+password: ${vscode_password}
+cert: false
+CSEOF
+chown -R $USERNAME:$USERNAME /home/$USERNAME/.config
+
+systemctl enable code-server@$USERNAME
+systemctl start code-server@$USERNAME
+
+echo "=== Step 10: Re-arm idle-stop CloudWatch alarm ==="
+# Reset the alarm to INSUFFICIENT_DATA so it can trigger a stop after 30 min of idle CPU.
+# Without this, the alarm stays stuck in ALARM state after a manual instance restart
+# and never fires again until it cycles through OK first.
+TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+REGION=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/placement/region)
+/usr/local/bin/aws cloudwatch set-alarm-state \
+  --alarm-name "otasdp-poc-ec2-idle-stop" \
+  --state-value INSUFFICIENT_DATA \
+  --state-reason "Re-armed on instance start via bootstrap" \
+  --region "$REGION" || true
+
+echo "=== Bootstrap complete for project: ${project_name} ==="

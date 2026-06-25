@@ -1,32 +1,12 @@
-project_name        = "code-intelligence-platform"
-environment         = "dev"
-aws_region          = "us-west-2"
-vpc_cidr            = "10.42.0.0/16"
-public_subnet_count = 2
-private_subnet_count = 2
-app_port            = 8000
+project_name = "code-intelligence-platform"
+environment  = "dev"
+aws_region   = "us-west-2"
 
-# Optional: scope Bedrock access to a model ARN.
-# If left blank, Bedrock invoke permissions use "*".
-bedrock_model_arn = ""
+# CI workspace EC2 instance (jay-ubuntu-workspace-ci-workspace)
+workspace_username        = "ubuntu"
+workspace_project_name    = "jay-ubuntu-workspace"
+workspace_vscode_password = "CHANGE_ME"
 
-# App deployment
-app_image         = "123456789012.dkr.ecr.us-west-2.amazonaws.com/code-intelligence-platform-dev-backend:latest"
-app_cpu           = 512
-app_memory        = 1024
-app_desired_count = 1
-app_health_check_path = "/health"
-
-# RDS (change these before apply)
-db_name           = "codeintel"
-db_username       = "codeintel_admin"
-db_password       = "ChangeMe123!"
-db_instance_class = "db.t4g.micro"
-db_allocated_storage = 20
-
-# Cost savings schedule (auto shut off outside work hours)
-enable_cost_savings_schedule = true
-schedule_timezone            = "America/Los_Angeles"
-workday_start_cron           = "cron(0 8 ? * MON-FRI *)"
-workday_stop_cron            = "cron(0 20 ? * MON-FRI *)"
-ecs_workday_desired_count    = 1
+# otasdp-poc workspace (access via SSM Session Manager, no SSH key pair)
+otasdp_poc_allowed_cidr_blocks = ["1.2.3.4/32"] # set to your real source IP(s) before apply
+otasdp_poc_vscode_password     = "CHANGE_ME"

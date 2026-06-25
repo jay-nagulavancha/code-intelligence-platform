@@ -16,124 +16,92 @@ variable "aws_region" {
   default     = "us-west-2"
 }
 
-variable "vpc_cidr" {
-  description = "CIDR block for VPC."
+variable "workspace_username" {
+  description = "Linux username created on the CI workspace EC2 instance."
   type        = string
-  default     = "10.42.0.0/16"
+  default     = "ubuntu"
 }
 
-variable "public_subnet_count" {
-  description = "Number of public subnets to create."
-  type        = number
-  default     = 2
-}
-
-variable "private_subnet_count" {
-  description = "Number of private subnets to create."
-  type        = number
-  default     = 2
-}
-
-variable "app_port" {
-  description = "Backend app listening port."
-  type        = number
-  default     = 8000
-}
-
-variable "bedrock_model_arn" {
-  description = "Optional Bedrock model ARN for scoped invoke permissions. If empty, '*' is used."
+variable "workspace_project_name" {
+  description = "Project label echoed by the workspace bootstrap script on completion."
   type        = string
-  default     = ""
+  default     = "jay-ubuntu-workspace"
 }
 
-variable "app_image" {
-  description = "Container image URI for backend app."
+variable "workspace_vscode_password" {
+  description = "Password for the code-server (VS Code web UI) instance on the CI workspace. Supply via terraform.tfvars (gitignored) or TF_VAR_workspace_vscode_password."
   type        = string
-  default     = "public.ecr.aws/docker/library/python:3.11-slim"
+  sensitive   = false
+  default     = "test"
 }
 
-variable "app_cpu" {
-  description = "ECS task CPU units."
+variable "otasdp_poc_aws_profile" {
+  description = "AWS CLI profile used to authenticate against the otasdp-poc AWS account (separate from the account holding the jay-ubuntu-workspace resources)."
+  type        = string
+  default     = "poc"
+}
+
+variable "otasdp_poc_vpc_cidr" {
+  description = "CIDR block for the otasdp-poc VPC."
+  type        = string
+  default     = "10.60.0.0/16"
+}
+
+variable "otasdp_poc_availability_zone" {
+  description = "Availability zone for the otasdp-poc subnet/instance."
+  type        = string
+  default     = "us-west-2a"
+}
+
+variable "otasdp_poc_instance_type" {
+  description = "EC2 instance type for the otasdp-poc workspace."
+  type        = string
+  default     = "m5.large"
+}
+
+variable "otasdp_poc_ami_id" {
+  description = "AMI ID for the otasdp-poc workspace instance."
+  type        = string
+  default     = "ami-0947c858572867ec7"
+}
+
+variable "otasdp_poc_root_volume_size" {
+  description = "Root EBS volume size (GB) for the otasdp-poc workspace instance."
   type        = number
-  default     = 512
+  default     = 100
 }
 
-variable "app_memory" {
-  description = "ECS task memory in MB."
-  type        = number
-  default     = 1024
+variable "otasdp_poc_allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to reach the otasdp-poc workspace (SSH/HTTP/HTTPS/VS Code/FastAPI/Qdrant). Must be set explicitly before apply."
+  type        = list(string)
 }
 
-variable "app_desired_count" {
-  description = "Desired ECS service task count."
-  type        = number
-  default     = 1
-}
-
-variable "app_health_check_path" {
-  description = "HTTP health check path for ALB target group."
+variable "otasdp_poc_username" {
+  description = "Linux username created on the otasdp-poc workspace EC2 instance."
   type        = string
-  default     = "/health"
+  default     = "ubuntu"
 }
 
-variable "db_name" {
-  description = "RDS database name."
+variable "otasdp_poc_project_name" {
+  description = "Project label echoed by the otasdp-poc workspace bootstrap script on completion."
   type        = string
-  default     = "codeintel"
+  default     = "otasdp-poc"
 }
 
-variable "db_username" {
-  description = "RDS master username."
-  type        = string
-  default     = "codeintel_admin"
-}
-
-variable "db_password" {
-  description = "RDS master password."
+variable "otasdp_poc_vscode_password" {
+  description = "Password for the code-server (VS Code web UI) instance on the otasdp-poc workspace. Supply via terraform.tfvars (gitignored) or TF_VAR_otasdp_poc_vscode_password."
   type        = string
   sensitive   = true
-  default     = "ChangeMe123!"
 }
 
-variable "db_instance_class" {
-  description = "RDS instance class."
-  type        = string
-  default     = "db.t4g.micro"
-}
-
-variable "db_allocated_storage" {
-  description = "RDS allocated storage in GB."
+variable "otasdp_poc_idle_cpu_threshold" {
+  description = "CPU utilization percentage below which the otasdp-poc instance is considered idle."
   type        = number
-  default     = 20
+  default     = 5
 }
 
-variable "enable_cost_savings_schedule" {
-  description = "Enable scheduled scale down/stop for lower environments."
-  type        = bool
-  default     = true
-}
-
-variable "schedule_timezone" {
-  description = "Timezone for scheduled cost-savings actions."
-  type        = string
-  default     = "America/Los_Angeles"
-}
-
-variable "workday_start_cron" {
-  description = "Cron for start-of-day scale up/start action (EventBridge Scheduler format)."
-  type        = string
-  default     = "cron(0 8 ? * MON-FRI *)"
-}
-
-variable "workday_stop_cron" {
-  description = "Cron for end-of-day scale down/stop action (EventBridge Scheduler format)."
-  type        = string
-  default     = "cron(0 20 ? * MON-FRI *)"
-}
-
-variable "ecs_workday_desired_count" {
-  description = "Desired ECS task count during workday schedule."
+variable "otasdp_poc_idle_minutes" {
+  description = "Minutes of sustained low CPU before the otasdp-poc instance is stopped. Must be a multiple of 5."
   type        = number
-  default     = 1
+  default     = 30
 }
-
